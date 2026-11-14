@@ -16,7 +16,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { Search } from 'lucide-react';
-import { AnnoSelector, SedeSelector } from '@/components/ui/cockpit';
+import { AnnoSelector, SedeNome, SedeSelector } from '@/components/ui/cockpit';
 import { UserMenu } from '@/components/ui/UserMenu';
 import { AdminSearchPanel } from './AdminSearchPanel';
 import { AdminNotificationsPanel } from './AdminNotificationsPanel';
@@ -97,6 +97,9 @@ export function AdminTopBar() {
             ricerca. */}
         <div className="ml-auto flex shrink-0 items-center gap-4">
           {/* selettore sede (reale) */}
+          {/* con UNA sede il selettore non c'è: il nome resta scritto, in sola lettura (prova di usabilità
+              2026-11). Sta PRIMA del selettore perché i due si escludono, e l'anno resta subito dopo l'uno o l'altro. */}
+          <SedeNome />
           <SedeSelector userId={userId} />
 
           {/* selettore anno scolastico (PR 4.2.6): SOLO da 1024 px. Sotto, la ricerca non ha 100 px da

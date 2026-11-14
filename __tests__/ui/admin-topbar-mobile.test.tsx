@@ -91,10 +91,18 @@ describe('AdminTopBarMobile — barra verde del brand (Step 3)', () => {
 });
 
 describe('AdminTopBarMobile — il selettore di sede compatto (W3-D / R73)', () => {
-  it('con una sola sede accessibile non si monta: non c\'è niente da scegliere', () => {
+  it('con una sola sede accessibile il selettore non si monta: non c\'è niente da scegliere', () => {
     render(<AdminTopBarMobile />);
-    expect(screen.queryByText(NOME_SEDE_A)).toBeNull();
     expect(screen.queryByText(/tutte le sedi/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /cambia sede/i })).toBeNull();
+  });
+
+  // Prova di usabilità 2026-11: con una sede sola la barra non diceva su quale scuola si lavora.
+  it('con una sola sede la barra ne scrive il nome, in sola lettura (non è un pulsante)', () => {
+    render(<AdminTopBarMobile />);
+    const nome = screen.getByText(NOME_SEDE_A);
+    expect(nome).toBeInTheDocument();
+    expect(nome.closest('button')).toBeNull();
   });
 
   it('con due sedi mostra lo scope attivo e apre la scelta', () => {
