@@ -270,6 +270,8 @@ export const CODICI_ERRORE = {
      * retta a **0,01 €**.
      */
     RETTA_ZERO: 'erroreRettaZero',
+    /** 400 — all'import, un bambino della domanda non ha una classe assegnata (la prosa dice QUALE bambino). */
+    CLASSE_MANCANTE: 'erroreClasseMancante',
     /** 400 — «la paga il fratello», ma il fratello indicato non è di questa domanda. */
     RETTA_FRATELLO_NON_VALIDO: 'erroreRettaFratelloNonValido',
     /**
@@ -3739,6 +3741,7 @@ export const CODICI_CON_DETTAGLIO: ReadonlySet<CodiceErrore> = new Set<CodiceErr
     // un'informazione che non si può usare: si riguardano tutti e tre.
     'RETTA_MANCANTE',
     'RETTA_ZERO',
+    'CLASSE_MANCANTE',
     'RETTA_FRATELLO_NON_VALIDO',
     'RETTA_FRATELLO_SENZA_CIFRA',
     'INTESTATARIO_NON_VALIDO',

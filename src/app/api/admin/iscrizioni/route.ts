@@ -1029,7 +1029,8 @@ export const PATCH = withRoute('admin/iscrizioni:PATCH', async (request: NextReq
 
     // Un'importazione rifiutata non è mai silenziosa: il codice del motivo e l'uuid della domanda (nessun dato personale)
     // finiscono nel log, e la pagina mostra il testo. Il 2026-11 la segreteria non vedeva perché «Importa» non facesse niente.
-    const rifiutaImport = (codice: string, error: string, status = 400) => {
+    // Il `codice` della risposta resta un LETTERALE nel punto in cui si risponde (il lock `errori-con-codice` non legge un parametro).
+    const logImportRifiutato = (codice: string) => {
       logEvento('iscrizione', 'warn', {
         operazione: 'admin/iscrizioni:PATCH',
         esito: 'import-rifiutato',
@@ -1037,13 +1038,12 @@ export const PATCH = withRoute('admin/iscrizioni:PATCH', async (request: NextReq
         entita_id: id,
         sede_id: scuolaId,
       })
-      return NextResponse.json({ error, codice }, { status })
     }
 
     // Ogni figlio deve avere una classe assegnata
     for (let i = 0; i < children.length; i++) {
       if (!assignments[String(i)]) {
-        return rifiutaImport('CLASSE_MANCANTE', `Assegnare una classe al bambino ${i + 1}`)
+        { logImportRifiutato('CLASSE_MANCANTE'); return NextResponse.json({ error: `Assegnare una classe al bambino ${i + 1}`, codice: 'CLASSE_MANCANTE' }, { status: 400 }) }
       }
     }
 
@@ -1072,11 +1072,11 @@ export const PATCH = withRoute('admin/iscrizioni:PATCH', async (request: NextReq
         // stesso, e pagare davvero: un rimando a chi a sua volta non paga è una
         // catena che non finisce su nessuna cifra.
         if (aCarico === i || aCarico >= children.length) {
-          return rifiutaImport('RETTA_FRATELLO_NON_VALIDO', `Bambino ${i + 1}: il fratello indicato per la retta non è valido`)
+          { logImportRifiutato('RETTA_FRATELLO_NON_VALIDO'); return NextResponse.json({ error: `Bambino ${i + 1}: il fratello indicato per la retta non è valido`, codice: 'RETTA_FRATELLO_NON_VALIDO' }, { status: 400 }) }
         }
         // Per un anno prossimo la cifra del fratello può mancare: la sua quota viene dal listino dell'anno.
         if (retteACarico[String(aCarico)] !== undefined || (!annoProssimo && !(rette[String(aCarico)] > 0))) {
-          return rifiutaImport('RETTA_FRATELLO_SENZA_CIFRA', `Bambino ${i + 1}: il fratello indicato non ha a sua volta una retta`)
+          { logImportRifiutato('RETTA_FRATELLO_SENZA_CIFRA'); return NextResponse.json({ error: `Bambino ${i + 1}: il fratello indicato non ha a sua volta una retta`, codice: 'RETTA_FRATELLO_SENZA_CIFRA' }, { status: 400 }) }
         }
         continue
       }
@@ -1087,29 +1087,33 @@ export const PATCH = withRoute('admin/iscrizioni:PATCH', async (request: NextReq
       if (importo === undefined && annoProssimo) continue
 
       if (importo === undefined) {
-        return rifiutaImport(
-          'RETTA_MANCANTE',
+        logImportRifiutato('RETTA_MANCANTE')
+        return NextResponse.json({
+          error:
           `Indicare la retta mensile del bambino ${i + 1}, oppure il fratello che la paga per lui. ` +
             'Senza, verrebbe applicata la retta predefinita della sede.',
-        )
+          codice: 'RETTA_MANCANTE',
+        }, { status: 400 })
       }
       // Lo `0` ARRIVA fin qui apposta (lo schema lo ammette, vedi la sua testata):
       // è il valore che una persona digita per dire «non paga», e deve trovare una
       // spiegazione invece di un «Dati non validi». Senza, si cerca — e si trova —
       // il ripiego dello 0,01 €, che in produzione sei famiglie hanno già.
       if (!(importo > 0)) {
-        return rifiutaImport(
-          'RETTA_ZERO',
+        logImportRifiutato('RETTA_ZERO')
+        return NextResponse.json({
+          error:
           `Bambino ${i + 1}: la retta non può essere zero. Nel registro lo zero vale «usa la retta ` +
             'predefinita della sede»: se il bambino non deve pagare, indica il fratello che paga per lui.',
-        )
+          codice: 'RETTA_ZERO',
+        }, { status: 400 })
       }
     }
 
     // L'adulto a cui intestare le fatture dev'essere uno di questa domanda.
     for (const [chiave, ai] of Object.entries(intestatari)) {
       if (ai >= adults.length) {
-        return rifiutaImport('INTESTATARIO_NON_VALIDO', `Bambino ${Number(chiave) + 1}: l'intestatario delle fatture indicato non esiste`)
+        { logImportRifiutato('INTESTATARIO_NON_VALIDO'); return NextResponse.json({ error: `Bambino ${Number(chiave) + 1}: l'intestatario delle fatture indicato non esiste`, codice: 'INTESTATARIO_NON_VALIDO' }, { status: 400 }) }
       }
     }
 

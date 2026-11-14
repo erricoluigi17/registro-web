@@ -98,7 +98,7 @@
 
   "preparaTitolo": "Get next year ready",
   "preparaIntro": "Year {anno}: the steps in the order you do them. Each row opens the right page.",
-  "preparaScegliSede": "To see the steps for next year, first pick a school from the selector at the top.",
+  "preparaScegliSede": "To see the steps for next year, first pick a location from the selector at the top.",
   "preparaStatoFatto": "Done",
   "preparaStatoDaFare": "To do",
   "preparaStatoInCorso": "In progress",
@@ -126,5 +126,5 @@
   "preparaPassaggioSenzaData": "The date is worked out from the last day of the current year.",
   "preparaVai": "Open",
   "preparaVaiAria": "Open: {tappa}",
-  "sedeUnicaAria": "School you are working on"
+  "sedeUnicaAria": "Location you are working on"
 }
