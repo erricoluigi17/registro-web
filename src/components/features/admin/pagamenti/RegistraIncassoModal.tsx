@@ -54,9 +54,14 @@ interface Props {
     userId: string;
     onClose: () => void;
     onDone: () => void;
+    /**
+     * Chiamata SUBITO dopo ogni incasso registrato (anche quando la finestra resta aperta per la fattura), così chi l'ha aperta
+     * può rileggere i suoi dati senza aspettare «Chiudi». Facoltativa: gli altri chiamanti non cambiano.
+     */
+    onPagato?: () => void;
 }
 
-export function RegistraIncassoModal({ pagamento, userId, onClose, onDone }: Props) {
+export function RegistraIncassoModal({ pagamento, userId, onClose, onDone, onPagato }: Props) {
     const t = useTranslations('adminContabilita');
     // Residuo EFFETTIVO (fonte unica S1): importo − sconto − già incassato, clampato a 0.
     const mancante = residuoEffettivo({
@@ -75,6 +80,11 @@ export function RegistraIncassoModal({ pagamento, userId, onClose, onDone }: Pro
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [saldato, setSaldato] = useState(pagamento.stato === 'pagato');
+    // Quanto di QUESTA voce è stato incassato da quando la finestra è aperta: la testata dice subito «Già incassato» e «Resta» giusti,
+    // invece di restare a quelli di prima (che sembravano un pagamento non riuscito). L'eccedenza va a credito e non conta qui.
+    const [registrato, setRegistrato] = useState(0);
+    const giaIncassato = pagamento.importo_pagato + registrato;
+    const restaOra = Math.max(0, mancante - registrato);
 
     // Dialog di conferma eccedenza → credito famiglia. Il ref sul bottone «Registra»
     // permette il ripristino del focus (WCAG 2.4.3): durante la POST async quel
@@ -139,6 +149,8 @@ export function RegistraIncassoModal({ pagamento, userId, onClose, onDone }: Pro
             }
             if (!res.ok) { setError(messaggioDaCorpo(json, t('incErroreRegistrazione'))); return; }
             setEccedenza(null);
+            setRegistrato((v) => v + Math.min(importo, mancante));
+            onPagato?.();
             // Se l'incasso salda il pagamento, resta nel popup per inviare la fattura
             if (importo >= mancante || (abbuono && isParziale)) setSaldato(true);
             else onDone();
@@ -173,8 +185,8 @@ export function RegistraIncassoModal({ pagamento, userId, onClose, onDone }: Pro
                     </p>
                     <div className="flex justify-between mt-2 font-maven text-xs">
                         <span className="text-kidville-sub">{t('incTotale')} {formatEuro(pagamento.importo)}</span>
-                        <span className="text-kidville-sub">{t('incGiaIncassato')} {formatEuro(pagamento.importo_pagato)}</span>
-                        <span className="text-kidville-green font-bold">{t('incResta')} {formatEuro(mancante)}</span>
+                        <span className="text-kidville-sub">{t('incGiaIncassato')} {formatEuro(giaIncassato)}</span>
+                        <span className="text-kidville-green font-bold">{t('incResta')} {formatEuro(saldato && registrato > 0 ? 0 : restaOra)}</span>
                     </div>
                     {Number(pagamento.sconto) > 0 && (
                         <p className="font-maven text-[11px] text-kidville-sub mt-1">{t('incScontoApplicato')} {formatEuro(pagamento.sconto)}</p>
@@ -259,15 +271,17 @@ export function RegistraIncassoModal({ pagamento, userId, onClose, onDone }: Pro
 
                 {saldato ? (
                     <div className="mt-5">
-                        <div role="status" className="flex items-center justify-between gap-2 bg-kidville-success-soft rounded-card px-3 py-2.5 mb-3">
-                            <span className="flex items-center gap-1.5 font-maven text-sm text-kidville-success-strong font-bold">
-                                <SaveCheck size={17} /> {t('incPagamentoSaldato')}
-                            </span>
-                            <FatturaButton pagamentoId={pagamento.id} userId={userId} fatturaStato={pagamento.fattura_stato} />
+                        <div role="status" className="flex items-center gap-1.5 bg-kidville-success-soft rounded-card px-3 py-2.5 mb-3 font-maven text-sm text-kidville-success-strong font-bold">
+                            <SaveCheck size={17} /> {t('incPagamentoSaldato')}
                         </div>
                         <button onClick={onDone} className={cx(BTN_PRIMARY, 'w-full')}>
                             {t('incChiudi')}
                         </button>
+                        {/* La fattura è facoltativa e si può fare anche dopo: sta in un punto a parte, lontano dal pulsante che chiude. */}
+                        <div className="mt-5 border-t border-kidville-line pt-3">
+                            <p className="font-maven text-xs text-kidville-sub mb-2">{t('incFatturaFacoltativa')}</p>
+                            <FatturaButton pagamentoId={pagamento.id} userId={userId} fatturaStato={pagamento.fattura_stato} />
+                        </div>
                     </div>
                 ) : (
                     <div className="flex gap-2 mt-5">

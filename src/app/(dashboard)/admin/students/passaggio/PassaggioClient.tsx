@@ -63,6 +63,8 @@ const PER_PAGINA = 25;
 const RIGHE_DA_DECIDERE_MAX = 50;
 const VALORE_ESCE = '__esce__';
 const PERCORSO_CONFERME = '/admin/students/conferme';
+/** La scheda «Sezioni» degli Alunni: le classi dell'anno scelto nel selettore, ognuna col suo nome da correggere (la pagina del dettaglio). */
+const PERCORSO_SEZIONI = '/admin/students?tab=sections';
 
 /** Una chiamata. Non lancia mai: una rete caduta è `stato: 0`, e ogni esito non riuscito si registra (fisso, senza dati). */
 async function chiama(metodo: 'GET' | 'POST' | 'PUT', url: string, userId: string, corpo?: Record<string, unknown>): Promise<Risposta> {
@@ -409,6 +411,8 @@ function Passaggio({ annoSedeId, puoCalcolare, inPreparazione }: { annoSedeId: s
   const annoGiaCominciato = !!passaggio.inizio_anno_nuovo && oggiFiscaleISO() >= passaggio.inizio_anno_nuovo;
   const quoteSuUsciti = contatori.fase === 'ok' ? contatori.dati.quoteSuUsciti : null;
   const confermaSpenta = occupato || nonAncora || contatori.fase !== 'ok' || numeroDaDecidere > 0;
+  // I due motivi che si possono spiegare accanto al pulsante (gli altri, «sta lavorando» e «sto leggendo i contatori», passano da soli).
+  const motivoSpento = nonAncora || numeroDaDecidere > 0;
   const pagine = Math.max(1, Math.ceil(totale / PER_PAGINA));
 
   const opzioniFiltro: Array<{ id: Filtro; label: string; count?: number }> = [
@@ -438,7 +442,7 @@ function Passaggio({ annoSedeId, puoCalcolare, inPreparazione }: { annoSedeId: s
       )}
       {inAnteprima && nonAncora && passaggio.apribile_dal && (
         <p role="status" className="mt-2 rounded-input border border-kidville-line bg-kidville-yellow-soft px-3 py-2 font-maven text-sm text-kidville-ink">
-          {t('nonAncora', { data: giorno(passaggio.apribile_dal) })} {t('nonAncoraNota')}
+          {t('nonAncoraNota')}
         </p>
       )}
 
@@ -460,14 +464,22 @@ function Passaggio({ annoSedeId, puoCalcolare, inPreparazione }: { annoSedeId: s
       {esitoMessaggio}
 
       {inAnteprima && (
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <button type="button" className={btnPrimary} disabled={confermaSpenta} aria-describedby={numeroDaDecidere > 0 ? 'passaggio-spenta' : undefined} onClick={() => setDialogo('conferma')}>
-            {t('azioneConferma')}
-          </button>
+        <div className="mt-3 flex flex-wrap items-start gap-3">
+          {/* Il pulsante e, SUBITO sotto, il motivo per cui è grigio: la data che dà il programma (`apribile_dal`) e/o le righe da decidere. */}
+          <div className="flex min-w-0 max-w-full flex-col gap-1">
+            <button type="button" className={btnPrimary} disabled={confermaSpenta} aria-describedby={motivoSpento ? 'passaggio-spenta' : undefined} onClick={() => setDialogo('conferma')}>
+              {t('azioneConferma')}
+            </button>
+            {motivoSpento && (
+              <div id="passaggio-spenta" className="flex max-w-xs flex-col gap-0.5">
+                {nonAncora && passaggio.apribile_dal && <span className={hint}>{t('nonAncora', { data: giorno(passaggio.apribile_dal) })}</span>}
+                {numeroDaDecidere > 0 && <span className={hint}>{t('azioneConfermaSpentaDecidere')}</span>}
+              </div>
+            )}
+          </div>
           <button type="button" className={secondario} disabled={occupato} onClick={calcola}>{t('azioneRicalcola')}</button>
           <button type="button" className={secondario} disabled={occupato} onClick={scarta}>{t('azioneScarta')}</button>
           <button type="button" className={secondario} onClick={rilegge}>{t('azioneAggiorna')}</button>
-          {numeroDaDecidere > 0 && <span id="passaggio-spenta" className={hint}>{t('azioneConfermaSpentaDecidere')}</span>}
         </div>
       )}
 
@@ -498,6 +510,13 @@ function Passaggio({ annoSedeId, puoCalcolare, inPreparazione }: { annoSedeId: s
       </div>
       <p className={hint}>{t('totaleBambini', { totale })}</p>
       {inAnteprima && <p className={hint}>{t('cambiaGradoNota')}</p>}
+      {/* Chi continua tiene il NOME della classe di quest'anno (la 1A resta 1A): chi si aspetta la 2A deve sapere dove cambiarlo. */}
+      {inAnteprima && (
+        <p className={hint}>
+          {t('continuaNota')}{' '}
+          <Link href={PERCORSO_SEZIONI} className="underline underline-offset-2">{t('continuaNotaLink')}</Link>.
+        </p>
+      )}
       {inAnteprima && (
         <p className={hint}>
           {t('rimandoConfermeNota')}{' '}

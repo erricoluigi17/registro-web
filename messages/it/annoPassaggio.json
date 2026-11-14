@@ -131,5 +131,7 @@
   "esitoDocenteRestaAssegnato": "Tolto dall’elenco del passaggio, ma resta assegnato alla classe nuova: l’assegnazione è sulla scheda della classe e si cambia da lì.",
   "dialogoGiaCominciato": "L’anno nuovo è già cominciato: le famiglie dei bambini che continuano vedono la classe nuova subito, e chi esce perde subito l’accesso.",
   "quoteSuUsciti": "{n, plural, one {# quota è ancora da pagare su un bambino che esce: il passaggio non la toglie.} other {# quote sono ancora da pagare su bambini che escono: il passaggio non le toglie.}}",
-  "dialogoAnnullaStorico": "Le schede sono già passate sulla classe nuova dal {dal}: annullando tornano alla classe di prima, ma nello storico delle classi i giorni già trascorsi restano sulla classe nuova."
+  "dialogoAnnullaStorico": "Le schede sono già passate sulla classe nuova dal {dal}: annullando tornano alla classe di prima, ma nello storico delle classi i giorni già trascorsi restano sulla classe nuova.",
+  "continuaNota": "Chi continua resta in una classe con lo stesso nome di quest’anno: la 1A resta 1A, non diventa 2A. Se vuoi un altro nome, rinomina la classe dell’anno nuovo dalla scheda",
+  "continuaNotaLink": "Sezioni"
 }
