@@ -8,8 +8,23 @@
 - **E4 — Conferme, incasso, cruscotto, passaggio.** Conferme: spiegato «Va alla primaria» (classe, quota e retta del listino della primaria) e che cosa vuol dire «Conferma»; «Moduli» diventa «Documenti». Incasso: la finestra mostra subito «Già incassato» e «Resta» giusti, la riga si aggiorna subito, «Invia fattura» sta in un punto separato dopo «Chiudi». Cruscotto: «Per classe» è una tabella (classe, in lista, iscritti) e c'è «Documenti che mancano». Passaggio: il motivo del pulsante grigio sta sotto il pulsante, con la data del programma, e una frase dice che il nome della classe non cambia, con rimando alle Sezioni.
 - **E5 — Demo, genitori di prova.** Nuova migrazione `20261114195853_demo_ripristina_genitori_di_prova.sql` (la applica l'integrazione al merge, non a mano). `demo_ripristina` e `demo_controllo` tolgono anche genitore, utente e utente di accesso nati con una prova. Un genitore si toglie solo se valgono tutte e quattro: (1) la riga `parents` è nata dopo la partenza; (2) dopo l'azzeramento non ha più legami con alunni, letti dalle chiavi esterne vere; (3) il suo utente ha ruolo `genitore`, è nato dopo la partenza e ha solo sedi `e2e00000…`; (4) l'email di accesso finisce in `.test`. Chi non le rispetta resta e compare in `lasciate`. Test PGlite per ogni criterio.
 - **Correzione `withUser`.** La funzione del cockpit (`src/lib/context/admin-identity.tsx`) aggiungeva sempre `?userId=`, anche a un indirizzo con una query già presente (`...?sezione=mensa?userId=...`). Ora usa `&` quando serve e mette il parametro prima di un eventuale `#frammento` (funzione `aggiungiUserId`, test `admin-identity-with-user`).
+- **Revisione indipendente, rilievi corretti.** Due revisori, uno per le pagine (E1-E4) e uno per la migrazione (E5): nessun critico né importante.
+  - **Pagine** (7 minori, 5 corretti):
+    - Sotto i 1024 px il nome della sede non si monta più nella barra, per non togliere spazio alla ricerca su tablet in verticale; sul telefono resta.
+    - Un corpo illeggibile dopo «Importa» mostra «Import fallito» e non più «importata». La scheda «Prepara l'anno prossimo» logga `warn` quando non riesce a leggere una risposta.
+    - Se la rilettura delle Conferme cade dopo un incasso, l'elenco resta con un avviso e «Riprova», e la finestra «Pagamento saldato» non sparisce.
+    - «Aggiungi la retta di una fascia» è nascosto quando non resta nessuna fascia libera, così non riscrive in silenzio la retta valida per tutti.
+    - Negli anni in chiusura o chiusi ogni retta mostra di nuovo i suoi mesi (`retteMesiElenco`).
+  - **Migrazione E5** (5 minori, poi 3 della seconda revisione):
+    - Senza la riga `utenti` il genitore non si tocca e resta fra le «lasciate».
+    - Un genitore nuovo senza nessun segnale di Demo (legame con alunni di prova, email `.test`, sede `e2e00000`) non si tocca e non si elenca.
+    - La cancellazione è per singolo genitore, in un sotto-blocco che intercetta solo `foreign_key_violation`: chi non si può togliere resta, con il nome del vincolo come motivo, e il ripristino prosegue. Una chiave differita non diretta fa invece fallire tutto senza scrivere niente: è un limite documentato nella guida della Demo.
+    - I test coprono `.TEST` maiuscolo, l'utente assente, il figlio a cascata e l'assenza di nomi ed email nel resoconto.
+  - **Il gate** ha trovato due controlli rossi nati dai lotti, corretti: il codice `CLASSE_MANCANTE` non era dichiarato (`errori-con-codice`) e due testi inglesi dicevano «school» invece di «location» (`glossario-sede`).
 
 **Non fatto / da decidere.**
+- Retta nella finestra del passaggio: nei giorni fra l'ultimo giorno aperto e l'inizio del nuovo anno la pagina può chiedere una retta che il server non pretende. È il lato sicuro: il client non accetta mai più del server. Per allinearli servirebbe un campo nuovo nella route delle domande.
+- I link della scheda «Prepara l'anno prossimo» scelgono l'anno al clic; aperti in una nuova scheda partono dall'anno in corso, perché Conferme, «A che punto siamo» e Passaggio non leggono l'anno dall'indirizzo.
 - Comune e Indirizzo non sono stati resi obbligatori nel modulo pubblico: l'E2E `e2e/public-iscrizione.spec.ts` non li compila, e in produzione l'obbligo lo decide `form_models` nel database.
 - Posti per classe nel cruscotto: la route li dà per fascia, non per classe.
 - La causa del «primo clic a vuoto» sul pulsante della home non è stata trovata.
