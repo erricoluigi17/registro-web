@@ -204,7 +204,7 @@ la segreteria lo importa, nascono un alunno, un genitore (`parents`, col suo `au
    prove usano per regola). Senza utente di accesso l'email non si può verificare: il genitore resta.
 
 Resta anche un genitore a cui è attaccata una riga che una chiave NO ACTION/RESTRICT non lascerebbe cancellare (una firma, una voce, un registro…) o il cui
-accesso lo usa un altro genitore che resta; la cancellazione è per singolo genitore, e se una chiave NO ACTION non diretta (un figlio a cascata) la fa fallire, quel genitore resta e il ripristino prosegue. Si tolgono **con lui** l'invito con le credenziali (contiene l'email) e le accettazioni dei consensi (senza chiave
+accesso lo usa un altro genitore che resta; la cancellazione è per singolo genitore, e se una chiave NO ACTION non diretta (un figlio a cascata) la fa fallire, quel genitore resta e il ripristino prosegue. Chi resta per questo motivo compare in `lasciate` con `motivo` = nome del vincolo (mai dati personali; c'è anche un `NOTICE` con l'uuid). **Limite noto:** una chiave `DEFERRABLE INITIALLY DEFERRED` non diretta non scatta nel sotto-blocco ma a `SET CONSTRAINTS … IMMEDIATE`: il ripristino intero fallisce e non scrive niente. Si legge il messaggio d'errore, si toglie la riga a mano o si rifà il ripristino. Si tolgono **con lui** l'invito con le credenziali (contiene l'email) e le accettazioni dei consensi (senza chiave
 esterna); il resto (notifiche, sottoscrizioni push, sedi dell'utente, chat) va via a cascata. L'ordine è dipendenti, `parents`, `utenti`, `auth.users`.
 
 Nel riassunto c'è una voce dell'`azzeramento`, «genitori di prova nati dopo la partenza (solo email .test, senza legami né sedi vere)», con `tolte` e `lasciate`;

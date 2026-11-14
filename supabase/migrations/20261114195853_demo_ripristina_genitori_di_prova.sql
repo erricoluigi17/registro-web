@@ -127,6 +127,7 @@ DECLARE
   v_tab         record;
   v_g           record;
   v_msg         text;
+  v_vincolo     text;
   v_dett        text;
   v_anno0       uuid;       -- l'anno nuovo, trovato dall'etichetta della fotografia (prima del ripristino può essere ancora `corrente`)
   v_annoid0     uuid;
@@ -159,11 +160,11 @@ BEGIN
   CREATE TEMP TABLE pg_temp._azzera_esito (ordine serial, gruppo integer NOT NULL DEFAULT 0, voce text NOT NULL, tolte integer DEFAULT 0, rimesse integer DEFAULT 0, lasciate integer DEFAULT 0,
     CHECK (gruppo = 1 OR (tolte IS NOT NULL AND rimesse IS NOT NULL AND lasciate IS NOT NULL))) ON COMMIT DROP;
   DROP TABLE IF EXISTS pg_temp._azzera_lasciate;
-  CREATE TEMP TABLE pg_temp._azzera_lasciate (tabella text NOT NULL, id uuid NOT NULL) ON COMMIT DROP;
+  CREATE TEMP TABLE pg_temp._azzera_lasciate (tabella text NOT NULL, id uuid NOT NULL, motivo text) ON COMMIT DROP;
   DROP TABLE IF EXISTS pg_temp._demo_stati;
   CREATE TEMP TABLE pg_temp._demo_stati (anno_sede_id uuid PRIMARY KEY, stato text, domande_aperte boolean) ON COMMIT DROP;
   DROP TABLE IF EXISTS pg_temp._demo_genitori;
-  CREATE TEMP TABLE pg_temp._demo_genitori (parent_id uuid PRIMARY KEY, utente_id uuid, legami integer NOT NULL DEFAULT 0, ok boolean NOT NULL DEFAULT true) ON COMMIT DROP;
+  CREATE TEMP TABLE pg_temp._demo_genitori (parent_id uuid PRIMARY KEY, utente_id uuid, legami integer NOT NULL DEFAULT 0, ok boolean NOT NULL DEFAULT true, motivo text) ON COMMIT DROP;
 
   -- ── 1 · La fotografia è fatta come deve (la sede è già verificata dalla guardia) ──────────
   IF jsonb_typeof(v_foto) IS DISTINCT FROM 'object'
@@ -547,6 +548,9 @@ BEGIN
     -- una sua riga, un'altra tabella, un altro schema) non si può leggere tutta dal catalogo con il ciclo qui sopra, e farebbe abortire l'intera
     -- funzione, cioè l'intero ripristino della Demo. Con `EXCEPTION WHEN foreign_key_violation` quel genitore torna com'era (il sotto-blocco annulla
     -- anche i suoi dipendenti) e finisce fra le lasciate; ogni altro errore NON si intercetta e fa fallire tutto, come prima.
+    -- LIMITE NOTO: una chiave `DEFERRABLE INITIALLY DEFERRED` non diretta non scatta dentro il sotto-blocco ma a `SET CONSTRAINTS … IMMEDIATE`
+    -- (più avanti, fuori da qui): in quel caso fallisce l'intero ripristino e non resta scritto niente. Non è un comportamento nascosto: si legge il
+    -- messaggio d'errore, si toglie a mano la riga che tiene ferma la chiave (dall'editor SQL) oppure si rifà il ripristino. Vedi la guida della Demo.
     -- Ordine: dipendenti → parents → utenti → auth.users. Inviti con le credenziali (l'email) e consensi (senza chiave) si tolgono con lui.
     FOR v_g IN SELECT g.parent_id, g.utente_id FROM pg_temp._demo_genitori g WHERE g.ok ORDER BY g.parent_id LOOP
       BEGIN
@@ -560,7 +564,10 @@ BEGIN
         DELETE FROM public.utenti u WHERE u.id = v_g.utente_id;
         DELETE FROM auth.users au WHERE au.id = v_g.utente_id;
       EXCEPTION WHEN foreign_key_violation THEN
-        UPDATE pg_temp._demo_genitori g SET ok = false WHERE g.parent_id = v_g.parent_id;
+        -- il perché: solo il nome del vincolo (mai dati personali), nel riassunto (`motivo`) e in un NOTICE con l'uuid di parents
+        GET STACKED DIAGNOSTICS v_vincolo = CONSTRAINT_NAME;
+        UPDATE pg_temp._demo_genitori g SET ok = false, motivo = coalesce(v_vincolo, 'vincolo sconosciuto') WHERE g.parent_id = v_g.parent_id;
+        RAISE NOTICE 'DEMO genitore % lasciato: chiave % non lascia cancellare', v_g.parent_id, coalesce(v_vincolo, 'sconosciuta');
       END;
     END LOOP;
     SELECT count(*) FILTER (WHERE g.ok), count(*) FILTER (WHERE NOT g.ok) INTO v_tolte, v_lasciate FROM pg_temp._demo_genitori g;
@@ -568,7 +575,7 @@ BEGIN
     -- chi resta si elenca, per tabella e uuid (una sola volta: può esserci già, se la sua domanda o il suo alunno se ne sono andati);
     -- chi se n'è andato, se era già elencato da un passo precedente, si toglie dall'elenco
     INSERT INTO pg_temp._azzera_lasciate
-      SELECT 'parents', g.parent_id FROM pg_temp._demo_genitori g
+      SELECT 'parents', g.parent_id, g.motivo FROM pg_temp._demo_genitori g
        WHERE NOT g.ok AND NOT EXISTS (SELECT 1 FROM pg_temp._azzera_lasciate la WHERE la.tabella = 'parents' AND la.id = g.parent_id);
     INSERT INTO pg_temp._azzera_lasciate
       SELECT DISTINCT 'utenti', u.id FROM pg_temp._demo_genitori g JOIN public.utenti u ON u.id = g.utente_id
@@ -908,7 +915,7 @@ BEGIN
     'azzeramento', (SELECT coalesce(jsonb_agg(jsonb_build_object('voce', zx.voce, 'tolte', zx.tolte, 'rimesse', zx.rimesse, 'lasciate', zx.lasciate) ORDER BY zx.gruppo, zx.ordine), '[]'::jsonb)
                       FROM pg_temp._azzera_esito zx WHERE zx.gruppo = 0),
     'domande_tolte', (SELECT coalesce(jsonb_agg(substring(zx.voce FROM '[0-9a-f-]{36}$') ORDER BY zx.ordine), '[]'::jsonb) FROM pg_temp._azzera_esito zx WHERE zx.gruppo = 1),
-    'lasciate', (SELECT coalesce(jsonb_agg(jsonb_build_object('tabella', zl.tabella, 'id', zl.id) ORDER BY zl.tabella, zl.id), '[]'::jsonb) FROM pg_temp._azzera_lasciate zl),
+    'lasciate', (SELECT coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('tabella', zl.tabella, 'id', zl.id, 'motivo', zl.motivo)) ORDER BY zl.tabella, zl.id), '[]'::jsonb) FROM pg_temp._azzera_lasciate zl),
     'invarianti_non_a_zero', v_inv);
 
   -- La PROVA A SECCO: il messaggio di un'eccezione è l'unica cosa che l'editor mostra di sicuro, e l'eccezione annulla tutto.

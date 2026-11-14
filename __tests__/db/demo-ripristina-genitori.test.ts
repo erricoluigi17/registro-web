@@ -33,7 +33,8 @@ beforeAll(async () => {
   // si porta dietro una cancellazione. Le azioni ON DELETE sono quelle VERE (lette dalle migrazioni).
   await b.db.exec(`
     CREATE TABLE auth.users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), email text);
-    ALTER TABLE public.utenti ADD COLUMN IF NOT EXISTS email text, ADD COLUMN IF NOT EXISTS ruolo text, ADD COLUMN IF NOT EXISTS scuola_id uuid;
+    ALTER TABLE public.parents ADD COLUMN IF NOT EXISTS nome text, ADD COLUMN IF NOT EXISTS cognome text, ADD COLUMN IF NOT EXISTS email text;
+    ALTER TABLE public.utenti ADD COLUMN IF NOT EXISTS nome text, ADD COLUMN IF NOT EXISTS cognome text, ADD COLUMN IF NOT EXISTS email text, ADD COLUMN IF NOT EXISTS ruolo text, ADD COLUMN IF NOT EXISTS scuola_id uuid;
     ALTER TABLE public.utenti ADD CONSTRAINT utenti_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE NOT VALID;
     ALTER TABLE public.parents ADD CONSTRAINT parents_auth_user_id_fkey FOREIGN KEY (auth_user_id) REFERENCES auth.users(id) ON DELETE SET NULL;
     CREATE TABLE public.utenti_scuole (utente_id uuid NOT NULL REFERENCES public.utenti(id) ON DELETE CASCADE, scuola_id uuid NOT NULL);
@@ -70,8 +71,10 @@ const adesso = () => una<string>(b.db, `SELECT now()::text`)
 
 type Esito = {
   azzeramento: { voce: string; tolte: number; rimesse: number; lasciate: number }[]
-  lasciate: { tabella: string; id: string }[]
+  lasciate: { tabella: string; id: string; motivo?: string }[]
 }
+// nomi ed email FINTI messi di proposito su parents/utenti: nel riassunto non devono comparire mai
+const NOMI_FINTI = /NomeFinto|CognomeFinto|FintaDemo|EmailFinta|kidville\.test|@/
 const VOCE = /^genitori di prova nati dopo la partenza/
 
 async function ripristina(partenza: string): Promise<Esito> {
@@ -94,12 +97,12 @@ async function genitore(o: {
   let utente: string | null = null
   if (auth && o.utente !== false) {
     const u = { ruolo: 'genitore', prima: false, scuola: DEMO as string | null, sedi: [DEMO], ...o.utente }
-    await q(`INSERT INTO public.utenti (id, email, ruolo, scuola_id, creato_il) VALUES ($1, 'x', $2, $3, ${u.prima ? prima : 'now()'})`, [auth, u.ruolo, u.scuola])
+    await q(`INSERT INTO public.utenti (id, email, ruolo, scuola_id, creato_il, nome, cognome) VALUES ($1, 'EmailFintaDemo@kidville.test', $2, $3, ${u.prima ? prima : 'now()'}, 'NomeFintoDemo', 'CognomeFintoDemo')`, [auth, u.ruolo, u.scuola])
     for (const s of u.sedi) await q(`INSERT INTO public.utenti_scuole (utente_id, scuola_id) VALUES ($1, $2)`, [auth, s])
     utente = auth
   }
   const parent = await una<string>(b.db,
-    `INSERT INTO public.parents (auth_user_id, created_at) VALUES ($1, ${o.parentPrima ? prima : 'now()'}) RETURNING id`, [auth])
+    `INSERT INTO public.parents (auth_user_id, created_at, nome, cognome, email) VALUES ($1, ${o.parentPrima ? prima : 'now()'}, 'NomeFintoDemo', 'CognomeFintoDemo', 'MammaFintaDemo@kidville.test') RETURNING id`, [auth])
   if (o.legame?.via === 'student_parents') await q(`INSERT INTO public.student_parents (student_id, parent_id) VALUES ($1, $2)`, [o.legame.alunno, parent])
   if (o.legame?.via === 'legame') await q(`INSERT INTO public.legame_genitori_alunni (genitore_id, alunno_id) VALUES ($1, $2)`, [utente, o.legame.alunno])
   if (o.legame?.via === 'guardians') await q(`INSERT INTO public.student_guardians (alunno_id, parent_id) VALUES ($1, $2)`, [o.legame.alunno, parent])
@@ -137,7 +140,7 @@ describe('demo_ripristina · i genitori di prova', () => {
       expect(await conta(`SELECT 1 FROM public.consensi_accettazioni WHERE parent_id = $1`, [g.parent]), 'il consenso è andato').toBe(0)
       expect(voce(e)).toMatchObject({ tolte: 1, lasciate: 0 })
       expect(e.lasciate.filter((l) => l.tabella === 'parents' || l.tabella === 'utenti')).toEqual([])
-      expect(JSON.stringify(e), 'mai l’email nel riassunto').not.toMatch(/kidville\.test|@/)
+      expect(JSON.stringify(e), 'mai l’email nel riassunto').not.toMatch(NOMI_FINTI)
     })
   })
 
@@ -231,8 +234,9 @@ describe('demo_ripristina · i genitori di prova', () => {
       expect(await esiste(bloccato), 'resta intero, con la sua notifica').toEqual(RIMASTO)
       expect(await conta(`SELECT 1 FROM public.notifiche WHERE id = $1`, [n])).toBe(1)
       expect(await esiste(libero), 'l’altro è andato').toEqual(ANDATO)
-      expect(e.lasciate).toContainEqual({ tabella: 'parents', id: bloccato.parent })
-      expect(e.lasciate).toContainEqual({ tabella: 'utenti', id: bloccato.utente })
+      expect(e.lasciate).toContainEqual(expect.objectContaining({ tabella: 'parents', id: bloccato.parent }))
+      expect(e.lasciate.find((l) => l.tabella === 'parents' && l.id === bloccato.parent)?.motivo, 'il motivo è il nome della chiave').toContain('notifiche_letture_notifica_id_fkey')
+      expect(e.lasciate).toContainEqual(expect.objectContaining({ tabella: 'utenti', id: bloccato.utente }))
       expect(voce(e)).toMatchObject({ tolte: 1, lasciate: 1 })
     })
   })
@@ -353,7 +357,7 @@ describe('demo_ripristina · i genitori di prova', () => {
       expect(msg).toMatch(/DEMO_PROVA_A_SECCO/)
       const riassunto = JSON.parse(msg.slice(msg.indexOf('{'))) as Esito
       expect(voce(riassunto)).toMatchObject({ tolte: 1, lasciate: 0 })
-      expect(msg).not.toMatch(/kidville\.test|@/)
+      expect(msg).not.toMatch(NOMI_FINTI)
       expect(await esiste(g), 'a secco: tutto com’era').toEqual(RIMASTO)
       expect(await conta(`SELECT 1 FROM public.consensi_accettazioni WHERE parent_id = $1`, [g.parent])).toBe(1)
       const vero = await ripristina(p)
