@@ -460,8 +460,13 @@ export function posterioriCheContengono(
 // 2026-11-14 · Le funzioni `demo_*` (`20261114124928_demo_funzioni_ripristino.sql`): una tabella privata (`demo_fotografie`, con un CHECK che
 // ammette solo sedi `e2e00000…`), un vincolo UNIQUE, e funzioni `SECURITY DEFINER` che scrivono nelle tabelle dell'anno della sola sede di prova.
 // La applica l'integrazione al merge; le fotografie si aggiornano nella PR-B.
+// SVUOTATA il 14/11/2026 (PR-B dopo il merge di #319, `b51d2ac3`): le due migrazioni (`20261114120434_anno_cruscotto_completi_per_sezione`,
+// `20261114124928_demo_funzioni_ripristino`) sono registrate una volta sola, con la version del file, e le fotografie sono rigenerate dalla
+// produzione (sola lettura). Cambiano: migrazioni 279 -> 281; indici unici 299 -> 301 (`demo_fotografie`: chiave primaria e UNIQUE
+// `(scuola_id, scattata_il)`); tabelle con `scuola_id` e FK di sede 102 -> 103; tabelle con RLS accesa 184 -> 185 (`demo_fotografie`, nessuna
+// policy, 40 invariate); funzioni che scrivono nel registro 71 -> 72 (`demo_ripristina`, classe `oblio`). Tabelle dell'anno (46, verificate), bucket e
+// schema delle candidature: non toccati.
 export const MIGRAZIONI_ATTESE_AL_MERGE: Readonly<Record<string, string>> = {
-    '20261114124928_demo_funzioni_ripristino.sql': 'funzioni demo_*: tabella privata demo_fotografie (RLS accesa, un UNIQUE) e funzioni di ripristino della sola sede di prova; la applica l\'integrazione al merge, la voce si toglie nella PR-B (14/11/2026)',
 }
 
 /**

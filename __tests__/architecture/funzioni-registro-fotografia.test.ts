@@ -25,11 +25,12 @@ const registro = new Set(
 )
 
 // Da aggiornare quando si rigenera la fotografia: blocca le cancellazioni silenziose.
+// 72 misurate in produzione il 14/11/2026 dopo le funzioni `demo_*` (#319): +1 `demo_ripristina` (classe `oblio`: cancella le prove della sede di Demo).
 // 71 misurate in produzione il 14/11/2026 dopo il CRM per l'assistente (#315): +1 `crm_ai_bambini`, e +4 del passaggio d'anno
 // (`passaggio_conferma`, `passaggio_annulla`, `passaggio_conferma_tardiva`, `passaggio_ricopia_schede`), in produzione dalla 4.8 (#307)
 // ma mai entrate qui perché dopo quel merge la fotografia non era stata rigenerata. Prima: 66 l'08/11 dopo la PR 4.3 (65 il 07/11,
 // +1 frequenza_segue_classe_alunno; il piano ne scriveva 58, vedi il report del 3.0).
-const FUNZIONI_ATTESE = 71
+const FUNZIONI_ATTESE = 72
 const CLASSI = ['corrente', 'esente-colonne', 'oblio', 'macchina-a-stati', 'dichiara', 'passaggio']
 
 describe('fotografia delle funzioni che scrivono il registro', () => {

@@ -1,8 +1,8 @@
 {
   "_come_si_rigenera": "node __tests__/fixtures/indici-unici-fotografia.mjs --sql | (esegui su prod) ; node __tests__/fixtures/indici-unici-fotografia.mjs < risposta.json",
   "generato_il": "2026-11-14",
-  "generato_alle": "2026-11-14T09:52:11Z",
-  "sha256": "7899a7ab3dc1b3411f8053debbb86cc688e7676aaf3e39806bd370f4672303f1",
+  "generato_alle": "2026-11-14T19:10:00Z",
+  "sha256": "d4637ebc6b9134ef59965e92a7e24bedff46f2fe60baecdb74cb7d4d90e4ef2e",
   "indici": [
     {
       "tabella": "admin_settings",
@@ -890,6 +890,29 @@
       "ha_colonna_nullable": false,
       "colonne": [
         "id"
+      ]
+    },
+    {
+      "tabella": "demo_fotografie",
+      "indice": "demo_fotografie_pkey",
+      "parziale": false,
+      "con_espressioni": false,
+      "nulls_not_distinct": false,
+      "ha_colonna_nullable": false,
+      "colonne": [
+        "id"
+      ]
+    },
+    {
+      "tabella": "demo_fotografie",
+      "indice": "demo_fotografie_scuola_id_scattata_il_key",
+      "parziale": false,
+      "con_espressioni": false,
+      "nulls_not_distinct": false,
+      "ha_colonna_nullable": false,
+      "colonne": [
+        "scattata_il",
+        "scuola_id"
       ]
     },
     {
