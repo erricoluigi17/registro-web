@@ -46,6 +46,8 @@ beforeAll(async () => {
     CREATE TABLE public.notifiche (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), utente_id uuid NOT NULL REFERENCES public.utenti(id) ON DELETE CASCADE);
     CREATE TABLE public.firme_documenti (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), utente_id uuid NOT NULL REFERENCES public.utenti(id));
     CREATE TABLE public.consensi_accettazioni (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), parent_id uuid NOT NULL);
+    -- un figlio del figlio: la notifica va via a cascata con l'utente, ma questa riga la tiene ferma con una chiave NO ACTION (non diretta verso utenti)
+    CREATE TABLE public.notifiche_letture (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), notifica_id uuid NOT NULL REFERENCES public.notifiche(id));
   `)
   for (const m of MIGRAZIONI) await b.db.exec(m)
 
@@ -174,13 +176,64 @@ describe('demo_ripristina · i genitori di prova', () => {
     })
   })
 
-  it('senza utente di accesso non si può verificare l’email → RESTA', async () => {
+  it('senza utente di accesso non si può verificare l’email → RESTA, e senza alcun indizio di Demo non è nemmeno elencato', async () => {
     await inRollback(b.db, async () => {
       const p = await partenza()
       const g = await genitore({ email: null })
       const e = await ripristina(p)
       expect(await conta(`SELECT 1 FROM public.parents WHERE id = $1`, [g.parent])).toBe(1)
+      expect(e.lasciate.map((l) => l.id)).not.toContain(g.parent)
+      expect(voce(e)).toMatchObject({ tolte: 0, lasciate: 0 })
+    })
+  })
+
+  it('un genitore nuovo di una sede VERA (email non .test, utente solo in sede vera) non è roba della Demo: non si tocca e non si elenca', async () => {
+    await inRollback(b.db, async () => {
+      const p = await partenza()
+      const g = await genitore({ email: 'famiglia@example.com', utente: { scuola: SEDE_VERA, sedi: [SEDE_VERA] } })
+      const e = await ripristina(p)
+      expect(await esiste(g)).toEqual(RIMASTO)
+      expect(e.lasciate.map((l) => l.id)).not.toContain(g.parent)
+      expect(e.lasciate.map((l) => l.id)).not.toContain(g.utente)
+      expect(voce(e)).toMatchObject({ tolte: 0, lasciate: 0 })
+    })
+  })
+
+  it('email in MAIUSCOLO (.TEST, con spazi) vale come .test: il genitore di prova va via', async () => {
+    await inRollback(b.db, async () => {
+      const p = await partenza()
+      const g = await genitore({ email: '  Famiglia@KIDVILLE.TEST ' })
+      const e = await ripristina(p)
+      expect(await esiste(g)).toEqual(ANDATO)
+      expect(voce(e)).toMatchObject({ tolte: 1, lasciate: 0 })
+    })
+  })
+
+  it('manca la riga in utenti (accesso .test, nessun controllo possibile su ruolo e data) → il genitore RESTA e compare fra le lasciate', async () => {
+    await inRollback(b.db, async () => {
+      const p = await partenza()
+      const g = await genitore({ utente: false })
+      const e = await ripristina(p)
+      expect(await esiste(g)).toEqual({ parents: 1, utenti: 0, auth: 1 })
       expect(e.lasciate).toContainEqual({ tabella: 'parents', id: g.parent })
+      expect(voce(e)).toMatchObject({ tolte: 0, lasciate: 1 })
+    })
+  })
+
+  it('un figlio a cascata con chiave NO ACTION (non diretta) fa restare SOLO quel genitore: il ripristino non fallisce e gli altri vanno via', async () => {
+    await inRollback(b.db, async () => {
+      const p = await partenza()
+      const bloccato = await genitore()
+      const libero = await genitore()
+      const n = await una<string>(b.db, `INSERT INTO public.notifiche (utente_id) VALUES ($1) RETURNING id`, [bloccato.utente])
+      await b.db.query(`INSERT INTO public.notifiche_letture (notifica_id) VALUES ($1)`, [n])
+      const e = await ripristina(p)
+      expect(await esiste(bloccato), 'resta intero, con la sua notifica').toEqual(RIMASTO)
+      expect(await conta(`SELECT 1 FROM public.notifiche WHERE id = $1`, [n])).toBe(1)
+      expect(await esiste(libero), 'l’altro è andato').toEqual(ANDATO)
+      expect(e.lasciate).toContainEqual({ tabella: 'parents', id: bloccato.parent })
+      expect(e.lasciate).toContainEqual({ tabella: 'utenti', id: bloccato.utente })
+      expect(voce(e)).toMatchObject({ tolte: 1, lasciate: 1 })
     })
   })
 

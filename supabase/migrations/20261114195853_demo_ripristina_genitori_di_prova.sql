@@ -8,15 +8,20 @@
 --   1. la riga `parents` è nata dopo la partenza;
 --   2. dopo l'azzeramento non ha più alcun legame con alcun alunno (`student_parents`, `legame_genitori_alunni`, `student_guardians` e ogni altra
 --      tabella che lega un genitore a un alunno: si leggono dalle chiavi esterne VERE, non da un elenco scritto qui);
---   3. il suo utente (se c'è) ha ruolo `genitore`, è nato dopo la partenza, ha come sede (se ne ha una) solo una sede `e2e00000…` e non ha righe in
---      `utenti_scuole` per una sede che non comincia per `e2e00000`;
+--   3. il suo utente ESISTE (se manca la riga `utenti` il genitore resta: ruolo e data non sono verificabili), ha ruolo `genitore`, è nato dopo la
+--      partenza, ha come sede (se ne ha una) solo una sede `e2e00000…` e non ha righe in `utenti_scuole` per una sede che non comincia per `e2e00000`;
 --   4. l'email dell'utente di accesso (`auth.users`) finisce in `.test`: è il dominio riservato dallo standard (RFC 2606), non può essere di
 --      una persona vera ed è quello che le prove usano per regola.
 -- In più non deve restargli attaccata nessuna riga che una chiave esterna NO ACTION/RESTRICT non lascerebbe cancellare (firme, voci, registri…): in
 -- quel caso il genitore resta. Si tolgono con lui gli inviti con le credenziali (contengono l'email) e le accettazioni dei consensi (senza chiave
 -- esterna); il resto (notifiche, sottoscrizioni push, sedi dell'utente, chat…) va via a cascata. Ordine: dipendenti → `parents` → `utenti` → `auth.users`.
 -- Un genitore che non rispetta anche una sola condizione RESTA e compare in `lasciate`, con tabella e uuid. Un genitore legato a un alunno di una
--- sede VERA non è roba della prova: non si tocca e non si elenca. Nel riassunto solo uuid e conteggi, mai l'email.
+-- sede VERA non è roba della prova: non si tocca e non si elenca. Lo stesso un genitore nato dopo la partenza SENZA alcun indizio di Demo (nessun legame
+-- con alunni di prova, email non `.test`, nessuna sede `e2e00000…` dell'utente): è una famiglia vera, né tolta né elencata. Un genitore con un indizio
+-- ma non rimovibile resta e compare fra le lasciate. La cancellazione è per singolo genitore: se una chiave NO ACTION/RESTRICT non diretta fa fallire
+-- il DELETE (`foreign_key_violation`), quel genitore resta fra le lasciate e il ripristino prosegue. L'email si confronta in minuscolo e senza spazi
+-- (`.TEST` vale come `.test`). Nel riassunto solo uuid e conteggi, mai l'email. Le righe tolte finiscono anche nella scatola nera (copia di 90 giorni,
+-- come per gli alunni): sono dati finti della Demo.
 --
 -- `CREATE OR REPLACE` delle funzioni, stessa firma e stessi grant di `20261114124928_demo_funzioni_ripristino.sql` (NON modificata: è già applicata
 -- in produzione). Si conservano le sue correzioni: il confronto su `fattura_stato`, le chiavi esterne composte, l'interruttore `anno_chiuso.oblio`
@@ -489,12 +494,23 @@ BEGIN
         FROM public.parents pr WHERE pr.created_at >= v_dal;
     -- legato a un alunno di una sede VERA (o a un legame che non si sa leggere): non è roba della prova, non si tocca e non si elenca
     DELETE FROM pg_temp._demo_genitori g WHERE g.legami = 2;
+    -- senza ALCUN indizio di appartenere alla Demo (né legami con alunni di prova, né email .test, né sede e2e00000 dell'utente) il genitore è
+    -- una famiglia di una sede vera arrivata dopo la partenza: non si tocca e NON si elenca (il riassunto della Demo non nomina roba che non le appartiene)
+    DELETE FROM pg_temp._demo_genitori g
+     WHERE g.legami = 0
+       AND NOT EXISTS (SELECT 1 FROM auth.users au WHERE au.id = g.utente_id AND right(lower(btrim(au.email)), 5) = '.test')
+       AND NOT EXISTS (SELECT 1 FROM public.utenti u WHERE u.id = g.utente_id AND left(u.scuola_id::text, 8) = 'e2e00000')
+       AND NOT EXISTS (SELECT 1 FROM public.utenti_scuole us WHERE us.utente_id = g.utente_id AND left(us.scuola_id::text, 8) = 'e2e00000');
     -- 2 · ha ancora un legame con un alunno (di prova, ma rimasto)
     UPDATE pg_temp._demo_genitori g SET ok = false WHERE g.legami <> 0;
     -- 4 · l'email dell'utente di accesso finisce in .test (senza utente di accesso non si può verificare: resta)
     UPDATE pg_temp._demo_genitori g SET ok = false
      WHERE g.ok AND NOT EXISTS (SELECT 1 FROM auth.users au WHERE au.id = g.utente_id AND right(lower(btrim(au.email)), 5) = '.test');
-    -- 3 · il suo utente (se c'è) è un genitore nato dopo la partenza, con sede solo di prova
+    -- 3 · il suo utente è un genitore nato dopo la partenza, con sede solo di prova. La riga `utenti` DEVE esistere: se manca non si può controllare
+    --     né il ruolo né la data, e la condizione scritta «non esiste un utente sbagliato» passerebbe a vuoto lasciando cancellare l'accesso `.test`
+    --     (scelta prudente: il genitore resta e compare fra le lasciate col suo uuid di `parents`).
+    UPDATE pg_temp._demo_genitori g SET ok = false
+     WHERE g.ok AND NOT EXISTS (SELECT 1 FROM public.utenti u WHERE u.id = g.utente_id);
     UPDATE pg_temp._demo_genitori g SET ok = false
      WHERE g.ok AND EXISTS (SELECT 1 FROM public.utenti u WHERE u.id = g.utente_id
                               AND (u.ruolo IS DISTINCT FROM 'genitore' OR u.creato_il IS NULL OR u.creato_il < v_dal
@@ -527,30 +543,38 @@ BEGIN
      WHERE g.ok AND EXISTS (SELECT 1 FROM public.parents p2 WHERE p2.auth_user_id = g.utente_id AND p2.id <> g.parent_id
                               AND NOT EXISTS (SELECT 1 FROM pg_temp._demo_genitori h WHERE h.parent_id = p2.id AND h.ok));
 
-    -- chi resta si elenca, per tabella e uuid (una sola volta: può esserci già, se la sua domanda o il suo alunno se ne sono andati)
+    -- Si toglie UN genitore alla volta, ciascuno in un sotto-blocco: una chiave NO ACTION/RESTRICT NON diretta (un figlio a cascata dell'utente o di
+    -- una sua riga, un'altra tabella, un altro schema) non si può leggere tutta dal catalogo con il ciclo qui sopra, e farebbe abortire l'intera
+    -- funzione, cioè l'intero ripristino della Demo. Con `EXCEPTION WHEN foreign_key_violation` quel genitore torna com'era (il sotto-blocco annulla
+    -- anche i suoi dipendenti) e finisce fra le lasciate; ogni altro errore NON si intercetta e fa fallire tutto, come prima.
+    -- Ordine: dipendenti → parents → utenti → auth.users. Inviti con le credenziali (l'email) e consensi (senza chiave) si tolgono con lui.
+    FOR v_g IN SELECT g.parent_id, g.utente_id FROM pg_temp._demo_genitori g WHERE g.ok ORDER BY g.parent_id LOOP
+      BEGIN
+        IF to_regclass('public.iscrizioni_inviti_credenziali') IS NOT NULL THEN
+          DELETE FROM public.iscrizioni_inviti_credenziali ic WHERE ic.parent_id = v_g.parent_id OR ic.auth_user_id = v_g.utente_id;
+        END IF;
+        IF to_regclass('public.consensi_accettazioni') IS NOT NULL THEN
+          DELETE FROM public.consensi_accettazioni cc WHERE cc.parent_id = v_g.parent_id;
+        END IF;
+        DELETE FROM public.parents pr WHERE pr.id = v_g.parent_id;
+        DELETE FROM public.utenti u WHERE u.id = v_g.utente_id;
+        DELETE FROM auth.users au WHERE au.id = v_g.utente_id;
+      EXCEPTION WHEN foreign_key_violation THEN
+        UPDATE pg_temp._demo_genitori g SET ok = false WHERE g.parent_id = v_g.parent_id;
+      END;
+    END LOOP;
+    SELECT count(*) FILTER (WHERE g.ok), count(*) FILTER (WHERE NOT g.ok) INTO v_tolte, v_lasciate FROM pg_temp._demo_genitori g;
+
+    -- chi resta si elenca, per tabella e uuid (una sola volta: può esserci già, se la sua domanda o il suo alunno se ne sono andati);
+    -- chi se n'è andato, se era già elencato da un passo precedente, si toglie dall'elenco
     INSERT INTO pg_temp._azzera_lasciate
       SELECT 'parents', g.parent_id FROM pg_temp._demo_genitori g
        WHERE NOT g.ok AND NOT EXISTS (SELECT 1 FROM pg_temp._azzera_lasciate la WHERE la.tabella = 'parents' AND la.id = g.parent_id);
     INSERT INTO pg_temp._azzera_lasciate
       SELECT DISTINCT 'utenti', u.id FROM pg_temp._demo_genitori g JOIN public.utenti u ON u.id = g.utente_id
        WHERE NOT g.ok AND u.creato_il >= v_dal AND NOT EXISTS (SELECT 1 FROM pg_temp._azzera_lasciate la WHERE la.tabella = 'utenti' AND la.id = u.id);
-    SELECT count(*) INTO v_lasciate FROM pg_temp._demo_genitori g WHERE NOT g.ok;
-
-    SELECT coalesce(array_agg(g.parent_id), ARRAY[]::uuid[]), coalesce(array_agg(g.utente_id) FILTER (WHERE g.utente_id IS NOT NULL), ARRAY[]::uuid[])
-      INTO v_gen_par, v_gen_ute FROM pg_temp._demo_genitori g WHERE g.ok;
-    -- le righe che dipendono da loro e che le chiavi non portano via: l'invito con le credenziali (l'email) e le accettazioni dei consensi (senza chiave)
-    IF to_regclass('public.iscrizioni_inviti_credenziali') IS NOT NULL THEN
-      DELETE FROM public.iscrizioni_inviti_credenziali ic WHERE ic.parent_id = ANY (v_gen_par) OR ic.auth_user_id = ANY (v_gen_ute);
-    END IF;
-    IF to_regclass('public.consensi_accettazioni') IS NOT NULL THEN
-      DELETE FROM public.consensi_accettazioni cc WHERE cc.parent_id = ANY (v_gen_par);
-    END IF;
-    -- poi, nell'ordine delle chiavi: genitore → utente → utente di accesso
-    DELETE FROM public.parents pr WHERE pr.id = ANY (v_gen_par);
-    GET DIAGNOSTICS v_tolte = ROW_COUNT;
-    DELETE FROM public.utenti u WHERE u.id = ANY (v_gen_ute);
-    DELETE FROM auth.users au WHERE au.id = ANY (v_gen_ute);
-    DELETE FROM pg_temp._azzera_lasciate la WHERE (la.tabella = 'parents' AND la.id = ANY (v_gen_par)) OR (la.tabella = 'utenti' AND la.id = ANY (v_gen_ute));
+    DELETE FROM pg_temp._azzera_lasciate la
+     WHERE EXISTS (SELECT 1 FROM pg_temp._demo_genitori g WHERE g.ok AND ((la.tabella = 'parents' AND la.id = g.parent_id) OR (la.tabella = 'utenti' AND la.id = g.utente_id)));
   ELSE
     v_tolte := 0; v_lasciate := 0;
   END IF;
