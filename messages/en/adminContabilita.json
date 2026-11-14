@@ -1673,5 +1673,6 @@
   "genrOrigineFrequenza": "from the child’s profile: {n}",
   "genrErrAnteprima": "The preview could not be prepared.",
   "genrNonGenerabileInPreparazione": "This year is still being prepared: tuition can be generated once enrolment opens.",
-  "genrNonGenerabileChiuso": "This year is closed: tuition can no longer be generated."
+  "genrNonGenerabileChiuso": "This year is closed: tuition can no longer be generated.",
+  "incFatturaFacoltativa": "Optional: the invoice for this payment can also be sent later."
 }

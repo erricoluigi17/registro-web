@@ -247,6 +247,10 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
   // L'esito della quota per riga, finché la pagina è aperta: una rilettura NON lo toglie (dal server si legge solo «assente»).
   const [esitiQuota, setEsitiQuota] = useState<Record<string, EsitoQuota | null>>({});
   const ricordaQuota = useCallback((frequenzaId: string, e: EsitoQuota | null) => setEsitiQuota((v) => ({ ...v, [frequenzaId]: e })), []);
+  // La finestra «Registra incasso» sta QUI e non dentro la riga: dopo un incasso la rilettura può far uscire la riga dall'elenco (un
+  // filtro «quota da saldare») o toglierle la voce, e una finestra legata alla riga sparirebbe mentre la segreteria sta leggendo l'esito.
+  // La voce si copia all'apertura: la finestra tiene i SUOI numeri (già incassato, resta) e la riga dietro si aggiorna da sola.
+  const [incasso, setIncasso] = useState<PagamentoRow | null>(null);
 
   const lettura = useLettura(
     `${base}/conferme?pagina=${pagina}&vista=${vista}&conferma=${filtro}${ambito ? '&ambito=anno' : ''}${modulo ? `&modulo=${modulo}` : ''}`,
@@ -451,12 +455,27 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
                   esitoQuota={esitiQuota[r.frequenza_id] ?? (r.quota_piu_voci ? 'piu_voci' : null)}
                   vociNonLette={vociNonLette}
                   ricordaQuota={ricordaQuota}
+                  apriIncasso={setIncasso}
                 />
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      {/* Fuori dalla tabella (portale): un <div> dentro <tbody> non è HTML valido. `onPagato` rilegge SUBITO: la riga dietro si aggiorna
+          mentre la finestra mostra l'esito; chiudere non rilegge più (l'ha già fatto il pagamento). */}
+      {incasso &&
+        createPortal(
+          <RegistraIncassoModal
+            pagamento={incasso}
+            userId={uid}
+            onPagato={rilegge}
+            onClose={() => setIncasso(null)}
+            onDone={() => setIncasso(null)}
+          />,
+          document.body,
+        )}
 
       <p className={`${hint} mt-3`}>{t('annullareNota')}</p>
       <p className={hint}><Link href="/admin/students/passaggio" className="underline underline-offset-2">{t('rimandoPassaggio')}</Link></p>
@@ -485,6 +504,7 @@ function RigaConferma({
   esitoQuota,
   vociNonLette,
   ricordaQuota,
+  apriIncasso,
 }: {
   r: RigaApi;
   vista: Vista;
@@ -498,6 +518,7 @@ function RigaConferma({
   esitoQuota: EsitoQuota | null;
   vociNonLette: boolean;
   ricordaQuota: (frequenzaId: string, e: EsitoQuota | null) => void;
+  apriIncasso: (p: PagamentoRow) => void;
 }) {
   const t = useTranslations('annoConferme');
   const id = useId();
@@ -510,7 +531,6 @@ function RigaConferma({
   const puoRitirare = ['admin', 'segreteria'].includes(useRuoloCockpit());
   const [chiediRitiro, setChiediRitiro] = useState(false);
   const [moduliAperti, setModuliAperti] = useState(false);
-  const [incassoAperto, setIncassoAperto] = useState(false);
 
   const nome = `${r.nome ?? ''} ${r.cognome ?? ''}`.trim() || t('bambinoSenzaNome');
   const motivi: Array<[string, string]> = [
@@ -651,7 +671,7 @@ function RigaConferma({
           {/* «Incassa» solo su una frequenza VIVA (in attesa o iscritto): su una ritirata/trasferita/uscita la segreteria incassa dalla Contabilità. */}
           {quota === 'da_pagare' && (statoFrequenza === 'in_attesa' || statoFrequenza === 'iscritto') &&
             (r.quota_voce ? (
-              <button type="button" className={`${secondario} mt-2 min-h-11`} onClick={() => setIncassoAperto(true)}>{t('azioneIncassa')}</button>
+              <button type="button" className={`${secondario} mt-2 min-h-11`} onClick={() => apriIncasso(pagamentoDa(r.quota_voce!, r))}>{t('azioneIncassa')}</button>
             ) : vociNonLette ? (
               <button type="button" className={`${secondario} mt-2 min-h-11`} disabled>{t('azioneIncassa')}</button>
             ) : (
@@ -698,6 +718,8 @@ function RigaConferma({
                     </>
                   )}
                 </div>
+                {/* Cosa vuol dire «Conferma»: vale anche per un bambino già di primaria, che non ha la casella «Va alla primaria». */}
+                <span className="block max-w-xs text-xs text-kidville-sub">{vaPrimaria ? t('confermaSpiegaPrimaria') : t('confermaSpiega')}</span>
               </>
             )}
             {vista === 'conferme' && r.conferma === 'confermato' && r.nuova_frequenza_id && puoRitirare && (
@@ -730,17 +752,6 @@ function RigaConferma({
           </div>
         </td>
       </tr>
-      {/* Fuori dalla tabella (portale): un <div> dentro <tbody> non è HTML valido. */}
-      {incassoAperto && r.quota_voce &&
-        createPortal(
-          <RegistraIncassoModal
-            pagamento={pagamentoDa(r.quota_voce, r)}
-            userId={userId}
-            onClose={() => { setIncassoAperto(false); rilegge(); }}
-            onDone={() => { setIncassoAperto(false); rilegge(); }}
-          />,
-          document.body,
-        )}
       {moduliAperti && r.nuova_frequenza_id && (
         <tr id={`${id}-moduli`} className="border-b border-kidville-line">
           <td colSpan={5} className="pb-3">

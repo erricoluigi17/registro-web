@@ -531,3 +531,72 @@ describe('PassaggioClient · S14', () => {
     expect(corpoDi(chiamate('PUT', '/passaggio/righe')[0])).toEqual({ alunno_id: AL1, esito: 'continua', section_id: S_A1 })
   })
 })
+
+// =============================================================================
+// LOTTO E4 · prova di facilità d'uso (agente 2, giro 2): il pulsante grigio senza spiegazione accanto, e la classe che «non cambia nome».
+// =============================================================================
+
+describe('PassaggioClient · E4 · il motivo del pulsante grigio', () => {
+  it.each([
+    ['2031-08-01', '1 agosto 2031'],
+    ['2028-02-03', '3 febbraio 2028'],
+  ])('prima della data (%s) il motivo, con la data del programma, sta SUBITO sotto «Conferma il passaggio»', async (apribile, scritta) => {
+    vi.setSystemTime(new Date('2027-06-15T10:00:00Z'))
+    s.passaggio = { id: PASS, stato: 'anteprima', conteggi: {}, apribile_dal: apribile, inizio_anno_nuovo: '2032-09-15' }
+    render(<PassaggioClient />)
+    await screen.findByText('NomeUno CognomeUno')
+    const pulsante = pulsanteConferma() as HTMLButtonElement
+    expect(pulsante.disabled).toBe(true)
+    // il motivo è il fratello successivo del pulsante, nello stesso contenitore, e il pulsante lo cita come sua descrizione
+    const motivo = pulsante.nextElementSibling as HTMLElement
+    expect(motivo.textContent).toContain(itPassaggio.nonAncora.replace('{data}', scritta))
+    expect(pulsante.getAttribute('aria-describedby')).toBe(motivo.id)
+    // la frase non è ripetuta in cima alla pagina: lì resta solo l'invito a guardare l'anteprima
+    expect(screen.getAllByText(new RegExp(scritta))).toHaveLength(1)
+    expect(screen.getByText(itPassaggio.nonAncoraNota)).toBeTruthy()
+  })
+
+  it('con righe «Da decidere» il motivo sotto il pulsante dice quello', async () => {
+    s.righe = [...RIGHE_BASE(), RIGA_DA_DECIDERE()]
+    render(<PassaggioClient />)
+    await screen.findByRole('region', { name: /Da decidere/ })
+    const pulsante = pulsanteConferma() as HTMLButtonElement
+    await waitFor(() => expect(pulsante.disabled).toBe(true))
+    expect((pulsante.nextElementSibling as HTMLElement).textContent).toContain(itPassaggio.azioneConfermaSpentaDecidere)
+  })
+
+  it('a pulsante acceso sotto non c’è nessun motivo', async () => {
+    render(<PassaggioClient />)
+    await screen.findByText('NomeUno CognomeUno')
+    await screen.findByText(itPassaggio.daDecidereVuoto)
+    const pulsante = pulsanteConferma() as HTMLButtonElement
+    expect(pulsante.disabled).toBe(false)
+    expect(pulsante.nextElementSibling).toBeNull()
+    expect(pulsante.getAttribute('aria-describedby')).toBeNull()
+  })
+})
+
+describe('PassaggioClient · E4 · chi continua tiene lo stesso nome di classe', () => {
+  it('una frase lo dice vicino a chi continua e porta alle Sezioni, dove si rinomina la classe dell’anno nuovo', async () => {
+    render(<PassaggioClient />)
+    await screen.findByText('NomeUno CognomeUno')
+    const frase = screen.getByText(new RegExp(itPassaggio.continuaNota.slice(0, 30)))
+    expect(frase.textContent).toMatch(/stesso nome/)
+    expect(frase.textContent).toMatch(/rinomin/i)
+    const link = within(frase).getByRole('link', { name: itPassaggio.continuaNotaLink })
+    expect(link.getAttribute('href')).toBe('/admin/students?tab=sections')
+  })
+
+  it('a passaggio confermato la frase non c’è più (non si decide più niente)', async () => {
+    s.passaggio = { id: PASS, stato: 'confermato', conteggi: { continuano: 1, nuovi: 0, usciti: 3, cambia_grado: 0, docenti_copiati: 1 }, apribile_dal: '2027-07-01' }
+    render(<PassaggioClient />)
+    await screen.findByText(itPassaggio.riepilogoTitolo)
+    expect(screen.queryByText(new RegExp(itPassaggio.continuaNota.slice(0, 30)))).toBeNull()
+  })
+
+  it.each([['it', itPassaggio], ['en', enPassaggio]])('(%s) le frasi nuove esistono in tutte e due le lingue', (_l, m) => {
+    const c = m as unknown as Record<string, string>
+    expect(c.continuaNota).toMatch(/\S/)
+    expect(c.continuaNotaLink).toMatch(/\S/)
+  })
+})

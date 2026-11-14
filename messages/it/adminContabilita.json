@@ -1673,5 +1673,6 @@
   "genrOrigineFrequenza": "dalla scheda del bambino: {n}",
   "genrErrAnteprima": "Non riesco a preparare l’anteprima.",
   "genrNonGenerabileInPreparazione": "Questo anno è ancora in preparazione: le rette si generano dal momento in cui si aprono le iscrizioni.",
-  "genrNonGenerabileChiuso": "Questo anno è chiuso: le rette non si generano più."
+  "genrNonGenerabileChiuso": "Questo anno è chiuso: le rette non si generano più.",
+  "incFatturaFacoltativa": "Facoltativo: la fattura di questo pagamento si può fare anche più tardi."
 }
