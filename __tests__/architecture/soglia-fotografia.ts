@@ -467,6 +467,7 @@ export function posterioriCheContengono(
 // policy, 40 invariate); funzioni che scrivono nel registro 71 -> 72 (`demo_ripristina`, classe `oblio`). Tabelle dell'anno (46, verificate), bucket e
 // schema delle candidature: non toccati.
 export const MIGRAZIONI_ATTESE_AL_MERGE: Readonly<Record<string, string>> = {
+    '20261114195853_demo_ripristina_genitori_di_prova.sql': 'demo_ripristina toglie anche i genitori di prova (email .test, nati dopo la partenza, senza legami né sedi vere) con il loro utente e il loro accesso; nessuna tabella, nessun vincolo nuovo, solo funzioni (CREATE OR REPLACE) e un aiuto interno; la applica l\'integrazione al merge, la voce si toglie nella PR-B (14/11/2026)',
 }
 
 /**
