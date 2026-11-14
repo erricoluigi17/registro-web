@@ -843,5 +843,10 @@
   "ricevutiSpostaAnnoFatto": "Domanda spostata al {anno}. Le classi vanno scelte di nuovo.",
   "ricevutiSpostaAnnoGiaEsaminata": "La domanda è già stata esaminata: l’anno non è cambiato.",
   "ricevutiSpostaAnnoNonOfferto": "La sede non accetta più domande per quell’anno. Controlla il calendario della sede.",
-  "ricevutiSpostaAnnoErrore": "Non sono riuscito a spostare la domanda. Riprova fra poco."
+  "ricevutiSpostaAnnoErrore": "Non sono riuscito a spostare la domanda. Riprova fra poco.",
+  "ricevutiRettaMensileObbligatoria": "Retta mensile (€) *",
+  "ricevutiRettaPlaceholderListino": "vuoto = retta del listino",
+  "ricevutiErroreClasseMancante": "Scegli la classe di questo bambino.",
+  "ricevutiErroreRettaMancante": "Scrivi la retta mensile, oppure indica il fratello che la paga.",
+  "ricevutiImportNonRiuscito": "Importazione non eseguita: la domanda resta in attesa."
 }

@@ -206,6 +206,13 @@ export function ModuliRicevuti() {
   const [abbinamenti, setAbbinamenti] = useState<Record<string, string>>({})
   const [working, setWorking] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
+  /**
+   * Perché l'importazione non è partita o è stata rifiutata, SULLO SCHERMO. Prima era un `alert()` del browser: chi usa
+   * l'app dentro una WebView, e chi collauda con un browser automatico, non lo vede, e il pulsante pareva morto.
+   */
+  const [erroreImport, setErroreImport] = useState<string | null>(null)
+  /** Per bambino (indice come stringa): il campo che manca, per scriverlo sotto il campo stesso. */
+  const [erroriCampo, setErroriCampo] = useState<Record<string, { classe?: boolean; retta?: boolean }>>({})
   /** La URL firmata che il browser ha rifiutato di aprire: si offre come link. */
   const [docBloccato, setDocBloccato] = useState<string | null>(null)
 
@@ -408,6 +415,8 @@ export function ModuliRicevuti() {
     setReferenteIndex(0)
     setAbbinamenti({})
     setResult(null)
+    setErroreImport(null)
+    setErroriCampo({})
     try {
       const res = await fetch(`/api/admin/iscrizioni?id=${encodeURIComponent(row.id)}`, {
         headers: { 'x-sedi': reFetchKey },
@@ -482,8 +491,35 @@ export function ModuliRicevuti() {
       ? { ...abbinamenti, [String(nuovoAbbinamento.bambino)]: nuovoAbbinamento.alunnoId }
       : abbinamenti
     if (nuovoAbbinamento) setAbbinamenti(daMandare)
-    setWorking(true)
     setResult(null)
+    setErroreImport(null)
+
+    // Prima di chiamare il server: ciò che manca si dice qui, sotto il campo, invece di aspettare un 400.
+    const figli = selected.data?.children ?? []
+    const rettaFacoltativa = etichettaFuoriAnno(selected) !== null
+    const importi = numeriDaCampi(rette, retteACarico)
+    const aCarico = indiciDaCampi(retteACarico)
+    const mancanti: Record<string, { classe?: boolean; retta?: boolean }> = {}
+    figli.forEach((_, i) => {
+      const k = String(i)
+      const m: { classe?: boolean; retta?: boolean } = {}
+      if (!assignments[k]) m.classe = true
+      if (!rettaFacoltativa && importi[k] === undefined && aCarico[k] === undefined) m.retta = true
+      if (m.classe || m.retta) mancanti[k] = m
+    })
+    setErroriCampo(mancanti)
+    if (Object.keys(mancanti).length > 0) {
+      logClient({
+        livello: 'warn',
+        evento: 'react',
+        messaggio: `iscrizione-import-non-inviato: campi mancanti ${Object.keys(mancanti).length}`,
+        route: '/admin/iscrizioni',
+      })
+      setErroreImport(t('ricevutiImportNonRiuscito'))
+      return
+    }
+
+    setWorking(true)
     try {
       const res = await fetch('/api/admin/iscrizioni', {
         method: 'PATCH',
@@ -504,8 +540,25 @@ export function ModuliRicevuti() {
           abbinamenti: daMandare,
         }),
       })
-      const json = await res.json()
-      if (!res.ok) { alert(json.error ?? t('ricevutiImportFallito')); return }
+      const json = await res.json().catch((e: unknown) => {
+        logClient({
+          livello: 'warn',
+          evento: 'react',
+          messaggio: `iscrizione-import-corpo-illeggibile: http ${res.status} ${nomeErrore(e)}`,
+          route: '/admin/iscrizioni',
+        })
+        return {} as { error?: string; codice?: string }
+      })
+      if (!res.ok) {
+        logClient({
+          livello: 'warn',
+          evento: 'react',
+          messaggio: `iscrizione-import-rifiutato: http ${res.status} ${typeof json.codice === 'string' ? json.codice : 'senza-codice'}`,
+          route: '/admin/iscrizioni',
+        })
+        setErroreImport(json.error ?? t('ricevutiImportFallito'))
+        return
+      }
       // `success:false` = errori bloccanti: l'invio resta 'pending' (nessun cambio di stato
       // lato server), quindi resta tra i "Da importare" e i pulsanti Importa/Rifiuta restano
       // disponibili per riprovare. Il pannello d'errore lo mostra in evidenza.
@@ -524,7 +577,7 @@ export function ModuliRicevuti() {
         messaggio: `iscrizione-import-fallito: ${nomeErrore(e)}`,
         route: '/admin/iscrizioni',
       })
-      alert(t('ricevutiErroreImport'))
+      setErroreImport(t('ricevutiErroreImport'))
     } finally {
       setWorking(false)
     }
@@ -812,6 +865,9 @@ export function ModuliRicevuti() {
                 // Una funzione che non passa l'evento: `doImport` accetta un
                 // abbinamento come primo argomento, e il clic gli darebbe il MouseEvent.
                 onImport={() => doImport()}
+                rettaFacoltativa={etichettaFuoriAnno(selected) !== null}
+                erroreImport={erroreImport}
+                erroriCampo={erroriCampo}
                 onUsaSchedaEsistente={(proposta) => doImport(proposta)}
                 onReject={doReject}
                 onViewDoc={viewDoc}
@@ -842,6 +898,7 @@ function DetailPanel({
   rette, setRette, retteACarico, setRetteACarico,
   intestatari, setIntestatari, giorniScadenza, setGiorniScadenza,
   referenteIndex, setReferenteIndex,
+  rettaFacoltativa, erroreImport, erroriCampo,
   working, result, onImport, onUsaSchedaEsistente, onReject, onViewDoc, docBloccato, onBack,
 }: {
   row: SubmissionRow
@@ -869,6 +926,10 @@ function DetailPanel({
   working: boolean
   result: ImportResult | null
   onImport: () => void
+  /** Domanda per un anno non ancora in corso: retta vuota = retta del listino di quell'anno. */
+  rettaFacoltativa: boolean
+  erroreImport: string | null
+  erroriCampo: Record<string, { classe?: boolean; retta?: boolean }>
   /** Ripete l'import riusando la scheda proposta da un `POSSIBILE_DOPPIONE`. */
   onUsaSchedaEsistente: (proposta: { bambino: number; alunnoId: string }) => void
   onReject: () => void
@@ -1014,11 +1075,18 @@ function DetailPanel({
                     id={`ricevuti-classe-${i}`}
                     value={assignments[String(i)] ?? ''}
                     onChange={e => setAssignments({ ...assignments, [String(i)]: e.target.value })}
-                    className="w-full mt-1 px-3 py-2 rounded-lg border border-kidville-line text-sm bg-white focus:outline-none focus:border-kidville-green"
+                    aria-invalid={erroriCampo[String(i)]?.classe ? true : undefined}
+                    aria-describedby={erroriCampo[String(i)]?.classe ? `ricevuti-classe-err-${i}` : undefined}
+                    className={`w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-white focus:outline-none focus:border-kidville-green ${erroriCampo[String(i)]?.classe ? 'border-kidville-error' : 'border-kidville-line'}`}
                   >
                     <option value="">{t('ricevutiSelezionaSezione')}</option>
                     {sezioniSede.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                   </select>
+                  {erroriCampo[String(i)]?.classe && (
+                    <p id={`ricevuti-classe-err-${i}`} className="mt-1 text-xs font-semibold text-kidville-error">
+                      {t('ricevutiErroreClasseMancante')}
+                    </p>
+                  )}
 
                   {/* ── LA RETTA ────────────────────────────────────────────
                       Obbligatoria come la classe, e VUOTA di partenza: un campo
@@ -1040,7 +1108,7 @@ function DetailPanel({
                         htmlFor={`ricevuti-retta-${i}`}
                         className="text-[11px] font-semibold text-kidville-sub uppercase"
                       >
-                        {t('ricevutiRettaMensile')}
+                        {rettaFacoltativa ? t('ricevutiRettaMensile') : t('ricevutiRettaMensileObbligatoria')}
                       </label>
                       <input
                         id={`ricevuti-retta-${i}`}
@@ -1051,9 +1119,16 @@ function DetailPanel({
                         disabled={!!retteACarico[String(i)]}
                         value={rette[String(i)] ?? ''}
                         onChange={e => setRette({ ...rette, [String(i)]: e.target.value })}
-                        placeholder={t('ricevutiRettaPlaceholder')}
-                        className="w-full mt-1 px-3 py-2 rounded-lg border border-kidville-line text-sm bg-white focus:outline-none focus:border-kidville-green disabled:bg-kidville-cream disabled:text-kidville-sub"
+                        placeholder={rettaFacoltativa ? t('ricevutiRettaPlaceholderListino') : t('ricevutiRettaPlaceholder')}
+                        aria-invalid={erroriCampo[String(i)]?.retta ? true : undefined}
+                        aria-describedby={erroriCampo[String(i)]?.retta ? `ricevuti-retta-err-${i}` : undefined}
+                        className={`w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-white focus:outline-none focus:border-kidville-green disabled:bg-kidville-cream disabled:text-kidville-sub ${erroriCampo[String(i)]?.retta ? 'border-kidville-error' : 'border-kidville-line'}`}
                       />
+                      {erroriCampo[String(i)]?.retta && (
+                        <p id={`ricevuti-retta-err-${i}`} className="mt-1 text-xs font-semibold text-kidville-error">
+                          {t('ricevutiErroreRettaMancante')}
+                        </p>
+                      )}
                     </div>
                     {children.length > 1 && (
                       <div>
@@ -1241,6 +1316,12 @@ function DetailPanel({
       )}
 
       {/* Azioni */}
+      {!done && erroreImport && (
+        <p role="alert" className="flex items-start gap-1.5 rounded-xl border border-kidville-error/30 bg-kidville-error-soft p-3 text-sm font-semibold text-kidville-error">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <span>{erroreImport}</span>
+        </p>
+      )}
       {!done && (
         <div className="flex items-center gap-3 pt-2 border-t border-kidville-line">
           <button
