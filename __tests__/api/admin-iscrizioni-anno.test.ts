@@ -32,7 +32,18 @@ const h = vi.hoisted(() => ({
   assertAlunnoInScope: vi.fn(),
   inviaEmail: vi.fn(),
   scuoleDiUtente: vi.fn(),
+  eventi: [] as { evento: string; livello: string; campi: Record<string, unknown> }[],
 }))
+
+vi.mock('@/lib/logging/logger', async (orig) => {
+  const m = await orig<typeof import('@/lib/logging/logger')>()
+  return {
+    ...m,
+    logEvento: (evento: string, livello: string, campi: Record<string, unknown>) => {
+      h.eventi.push({ evento, livello, campi })
+    },
+  }
+})
 
 vi.mock('@/lib/auth/require-staff', () => ({ requireStaff: h.requireStaff }))
 vi.mock('@/lib/audit/scrittura', () => ({ logScrittura: h.logScrittura }))
@@ -135,6 +146,7 @@ const scrittureDiOggiSuAlunni = () =>
 beforeEach(() => {
   vi.clearAllMocks()
   h.scritture = []
+  h.eventi = []
   h.errori = {}
   h.rpc = []
   h.registra = null
@@ -476,5 +488,49 @@ describe('POST /api/admin/iscrizioni/sposta-anno', () => {
     const res = await sposta({ domanda_id: DOMANDA, anno_id: ANNO_2027 })
     expect(res.status).toBe(401)
     expect(h.scritture).toEqual([])
+  })
+})
+
+describe('l’import senza retta: anno prossimo = listino, anno in corso = cifra obbligatoria (lotto E1)', () => {
+  it('anno prossimo, retta vuota: l’import riesce e la frequenza parte senza retta (vale il listino)', async () => {
+    const res = await importa({ assignments: { '0': '3 ANNI' } })
+    const json = await res.json()
+    expect(res.status).toBe(200)
+    expect(json.success).toBe(true)
+    const [r] = registrazioni()
+    expect((r.p_campi as Record<string, unknown>).retta_mensile).toBeUndefined()
+  })
+
+  it('anno prossimo, «la paga il fratello» senza cifre: non è rifiutato', async () => {
+    h.db.enrollment_submissions = [domanda([bambino('Mario'), bambino('Luca')])]
+    const res = await importa({ assignments: { '0': '3 ANNI', '1': '3 ANNI' }, retteACarico: { '1': 0 } })
+    expect(res.status).toBe(200)
+  })
+
+  it('anno prossimo: lo zero resta rifiutato (RETTA_ZERO), con il log del motivo', async () => {
+    const res = await importa({ assignments: { '0': '3 ANNI' }, rette: { '0': 0 } })
+    expect(res.status).toBe(400)
+    expect((await res.json()).codice).toBe('RETTA_ZERO')
+  })
+
+  it('anno in corso, retta vuota: 400 RETTA_MANCANTE e un log warn con il codice e l’uuid della domanda, senza dati personali', async () => {
+    h.db.enrollment_submissions = [domanda([bambino('Mario')], { anno_id: ANNO_OGGI })]
+    const res = await importa({ assignments: { '0': '3 ANNI' } })
+    expect(res.status).toBe(400)
+    expect((await res.json()).codice).toBe('RETTA_MANCANTE')
+    const log = h.eventi.find((e) => e.campi.esito === 'import-rifiutato')
+    expect(log).toBeDefined()
+    expect(log!.livello).toBe('warn')
+    expect(log!.campi.error_code).toBe('RETTA_MANCANTE')
+    expect(log!.campi.entita_id).toBe(DOMANDA)
+    const testo = JSON.stringify(log)
+    for (const dato of ['Mario', 'Prova', 'anna@example.test', 'Bianchi']) expect(testo).not.toContain(dato)
+  })
+
+  it('classe mancante: 400 CLASSE_MANCANTE col suo log', async () => {
+    const res = await importa({ assignments: {} })
+    expect(res.status).toBe(400)
+    expect((await res.json()).codice).toBe('CLASSE_MANCANTE')
+    expect(h.eventi.some((e) => e.campi.error_code === 'CLASSE_MANCANTE' && e.livello === 'warn')).toBe(true)
   })
 })
