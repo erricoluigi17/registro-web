@@ -169,7 +169,8 @@ export const CLASSI = {
     passaggio_conferma_tardiva: C('corrente', 'riapre o inserisce la frequenza dell\'anno nuovo di un bambino confermato tardi: passa dalla guardia'),
     passaggio_ricopia_schede: C('corrente', 'job del giorno d\'inizio: chiude la frequenza nuova di chi è stato archiviato dopo la conferma (anno nuovo corrente), passa dalla guardia'),
     // ── oblio ──
-    elimina_alunno_definitivo: C('oblio', 'cancella l\'alunno e il suo registro (diario, pagamenti, moduli, fascicolo)'),
+    demo_ripristina: C('oblio', 'riporta la sede di Demo alla partenza: cancella le prove (incassi, sezioni e periodi di scrutinio nati dopo) con l\'interruttore anno_chiuso.oblio acceso solo per quel DELETE; rifiuta ogni sede non e2e00000'),
+    elimina_alunno_definitivo:C('oblio', 'cancella l\'alunno e il suo registro (diario, pagamenti, moduli, fascicolo)'),
     presenze_giustificazioni_retention_tick: C('oblio', 'job notturno: toglie giustificazione_testo e note_appello dalle presenze'),
 }
 

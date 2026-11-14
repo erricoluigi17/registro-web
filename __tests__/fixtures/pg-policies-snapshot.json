@@ -1,8 +1,8 @@
 {
   "_come_si_rigenera": "node scripts/rls-fotografia.mjs --sql | (esegui su prod) ; node scripts/rls-fotografia.mjs < risposta.json",
   "generato_il": "2026-11-14",
-  "generato_alle": "2026-11-14T09:52:15Z",
-  "sha256": "f49824cb65f9d3cf88927053519e88e49740f5b5d11f8b41cc9402c5ba2abc5e",
+  "generato_alle": "2026-11-14T19:10:00Z",
+  "sha256": "a0da3f34e9b097658396b3bf6fa941e0abd5951a89527443401cc77264c6d719",
   "policy_solo_service_role": 74,
   "policies": [
     {
@@ -476,6 +476,7 @@
     "crm_schede",
     "crm_servizi_sede",
     "crm_settimane",
+    "demo_fotografie",
     "divise_articoli",
     "divise_ordini",
     "enrollment_submissions",
@@ -602,6 +603,7 @@
     "cron_prese",
     "cron_ultimo_esito",
     "delegates",
+    "demo_fotografie",
     "divise_articoli",
     "divise_ordini",
     "divise_ordini_righe",
