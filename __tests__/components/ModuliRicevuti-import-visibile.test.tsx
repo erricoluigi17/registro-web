@@ -79,7 +79,7 @@ function dettaglio(id: string) {
   }
 }
 
-type Patch = { ok: boolean; status: number; corpo: unknown } | 'rete'
+type Patch = { ok: boolean; status: number; corpo: unknown } | 'rete' | 'illeggibile'
 let rispostaPatch: Patch = { ok: true, status: 200, corpo: { success: true } }
 const fetchMock = vi.fn()
 const alertMock = vi.fn()
@@ -89,6 +89,9 @@ function rispondi(url: string, init?: RequestInit): Promise<unknown> {
   const json = (corpo: unknown) => Promise.resolve({ ok: true, status: 200, json: async () => corpo })
   if (init?.method === 'PATCH') {
     if (rispostaPatch === 'rete') return Promise.reject(new TypeError('rete'))
+    if (rispostaPatch === 'illeggibile') {
+      return Promise.resolve({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <') } })
+    }
     const r = rispostaPatch
     return Promise.resolve({ ok: r.ok, status: r.status, json: async () => r.corpo })
   }
@@ -180,6 +183,19 @@ describe('ModuliRicevuti — l\'import non parte mai in silenzio', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(itAdminAltro.ricevutiErroreImport)
     expect(alertMock).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: itAdminAltro.ricevutiImporta })).toBeEnabled()
+  })
+
+  it('un 200 con il corpo illeggibile NON è «importata»: si vede l\'errore nella pagina e si logga', async () => {
+    rispostaPatch = 'illeggibile'
+    render(<ModuliRicevuti />)
+    await apriEScegliClasse('Ada Verdi')
+    importa()
+    expect(await screen.findByRole('alert')).toHaveTextContent(itAdminAltro.ricevutiImportFallito)
+    expect(screen.queryByText(itAdminAltro.ricevutiImportata)).toBeNull()
+    expect(logClientMock).toHaveBeenCalledWith(expect.objectContaining({
+      livello: 'warn',
+      messaggio: expect.stringContaining('iscrizione-import-corpo-illeggibile'),
+    }))
   })
 
   it('classe non scelta: il messaggio sta sotto il campo e non parte nessuna richiesta', async () => {

@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { SEDE_A, SEDE_B, NOME_SEDE_A, NOME_SEDE_B } from '../fixtures/sedi';
+import { QUERY_SIDEBAR, QUERY_TABLET } from '@/lib/ui/use-formato-guscio';
 
 /**
  * Prova di usabilità 2026-11 (segretaria nuova, sede Demo): «In alto solo "STAFF – Kidville" e l'anno
@@ -17,6 +18,7 @@ const stub = vi.hoisted(() => ({
 
 vi.mock('@/lib/context/admin-identity', () => ({
   useAdminIdentity: () => ({ userId: 'u1', ruolo: 'segreteria', withUser: (h: string) => `${h}?userId=u1` }),
+  useRuoloCockpit: () => 'segreteria',
 }));
 vi.mock('@/lib/context/sede-context', () => ({
   useSediAttive: () => ({
@@ -66,5 +68,38 @@ describe('AdminTopBar — su quale scuola si lavora', () => {
     const { container } = render(<AdminTopBar />);
     expect(container.querySelector('[data-kv-sede-nome]')).toBeNull();
     expect(screen.getByRole('button', { name: /cambia sede/i })).toBeInTheDocument();
+  });
+
+  /** Finge una finestra larga quanto basta perché combacino solo le query date. */
+  function finestra(combaciano: string[]) {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((media: string) => ({
+        matches: combaciano.includes(media),
+        media,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    );
+  }
+
+  describe('sul tablet in verticale (binario, 744-1023 px)', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('il nome della sede non toglie spazio alla ricerca: come l\'anno, sotto 1024 px non c\'è', () => {
+      finestra([QUERY_TABLET]);
+      const { container } = render(<AdminTopBar />);
+      expect(container.querySelector('[data-kv-sede-nome]')).toBeNull();
+    });
+
+    it('da 1024 px (sidebar) il nome c\'è', () => {
+      finestra([QUERY_TABLET, QUERY_SIDEBAR]);
+      const { container } = render(<AdminTopBar />);
+      expect(container.querySelector('[data-kv-sede-nome]')).not.toBeNull();
+    });
   });
 });

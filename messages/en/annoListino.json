@@ -81,6 +81,7 @@
   "retteMesiTitolo": "Months in which tuition is generated",
   "retteMesiNota": "Applies to the “All groups” row. Usually September to June. Tuition already created does not change.",
   "retteMesiVuoti": "Choose at least one month.",
+  "retteMesiElenco": "Months: {mesi}",
   "documentiSpiega": "Documents to hand in are the ones the family brings to the school office (for example the vaccination certificate): the office ticks them when they arrive.",
   "fasciaSpiega": "The age group is the group of a class (for example nursery first year, preschool, primary). It is used when the amount changes from one group to another; the age group of each class is chosen in the “Classes for the year” block further down.",
   "fasciaPerTutti": "For all children",

@@ -99,7 +99,9 @@ export function AdminTopBar() {
           {/* selettore sede (reale) */}
           {/* con UNA sede il selettore non c'è: il nome resta scritto, in sola lettura (prova di usabilità
               2026-11). Sta PRIMA del selettore perché i due si escludono, e l'anno resta subito dopo l'uno o l'altro. */}
-          <SedeNome />
+          {/* Sotto i 1024 px (binario) il nome non si monta, come l'anno: alla ricerca servono tutti i
+              suoi ~310 px. Su telefono lo scrive `AdminTopBarMobile`. */}
+          {formato !== 'binario' && <SedeNome />}
           <SedeSelector userId={userId} />
 
           {/* selettore anno scolastico (PR 4.2.6): SOLO da 1024 px. Sotto, la ricerca non ha 100 px da

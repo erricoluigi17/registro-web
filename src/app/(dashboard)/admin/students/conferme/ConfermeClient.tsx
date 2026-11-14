@@ -95,7 +95,14 @@ type Aggiornamento = { fatti: number; stato: string; quotaSaldata: boolean };
 type Esito = { tipo: 'ok' | 'errore'; testo: string };
 
 type Risposta = { stato: number; corpo: unknown };
-type Lettura<T> = { fase: 'carico' } | { fase: 'ok'; dati: T } | { fase: 'errore'; stato: number; corpo: unknown };
+/**
+ * `ok.obsoleta`: una lettura NUOVA è fallita ma ne avevamo già una buona, che resta in vista. Così una rilettura caduta
+ * (la rete, dopo un incasso) non smonta ciò che la segreteria sta guardando: l'elenco e la finestra «Pagamento saldato».
+ */
+type Lettura<T> =
+  | { fase: 'carico' }
+  | { fase: 'ok'; dati: T; obsoleta?: { stato: number; corpo: unknown } }
+  | { fase: 'errore'; stato: number; corpo: unknown };
 
 /** Una chiamata. Non lancia mai: una rete caduta è `stato: 0`, e ogni esito non riuscito si registra (fisso, senza dati). */
 async function chiama(metodo: 'GET' | 'POST' | 'PUT', url: string, userId: string, corpo?: Record<string, unknown>): Promise<Risposta> {
@@ -121,8 +128,17 @@ const dataDi = (r: Risposta): Record<string, unknown> | null => {
   return d !== null && typeof d === 'object' && !Array.isArray(d) ? (d as Record<string, unknown>) : null;
 };
 
+const nonTenereVecchi = (): boolean => false; // modulo-livello: stabile fra i render, serve nelle dipendenze dell'effetto
+
 /** Legge una volta per `chiave` (l'URL e la versione); finché non arriva la risposta nuova resta in vista quella di prima. */
-function useLettura<T>(url: string, userId: string, versione: number, estrai: (r: Risposta) => T | null): Lettura<T> {
+function useLettura<T>(
+  url: string,
+  userId: string,
+  versione: number,
+  estrai: (r: Risposta) => T | null,
+  /** Dopo un errore, tiene l'elenco di prima? Falso per i rifiuti che cambiano il significato dell'elenco (es. un modulo di un'altra sede). */
+  tieniVecchi: (r: Risposta) => boolean = nonTenereVecchi,
+): Lettura<T> {
   const [stato, setStato] = useState<{ chiave: string; lettura: Lettura<T> } | null>(null);
   const chiave = `${url}#${versione}`;
   useEffect(() => {
@@ -130,12 +146,18 @@ function useLettura<T>(url: string, userId: string, versione: number, estrai: (r
     chiama('GET', url, userId).then((r) => {
       if (!attivo) return;
       const dati = riuscita(r) ? estrai(r) : null;
-      setStato({ chiave, lettura: dati ? { fase: 'ok', dati } : { fase: 'errore', stato: r.stato, corpo: r.corpo } });
+      setStato((prima) => {
+        if (dati) return { chiave, lettura: { fase: 'ok', dati } };
+        if (prima && prima.lettura.fase === 'ok' && tieniVecchi(r)) {
+          return { chiave, lettura: { fase: 'ok', dati: prima.lettura.dati, obsoleta: { stato: r.stato, corpo: r.corpo } } };
+        }
+        return { chiave, lettura: { fase: 'errore', stato: r.stato, corpo: r.corpo } };
+      });
     });
     return () => {
       attivo = false;
     };
-  }, [url, userId, chiave, estrai]);
+  }, [url, userId, chiave, estrai, tieniVecchi]);
   if (stato && stato.chiave === chiave) return stato.lettura;
   if (stato && stato.lettura.fase === 'ok') return stato.lettura;
   return { fase: 'carico' };
@@ -178,6 +200,9 @@ const codiceDi = (corpo: unknown): string | null => {
   const c = (corpo as { codice?: unknown } | null)?.codice;
   return typeof c === 'string' ? c : null;
 };
+
+/** L'elenco già in vista resta se una rilettura cade, TRANNE quando il server rifiuta il modulo (è di un'altra sede: l'elenco non vale più). */
+const tieniElenco = (r: Risposta): boolean => codiceDi(r.corpo) !== 'MODULO_NON_RICHIESTO';
 const UUID =/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MOTIVI = ['altra_scuola', 'trasloco', 'fine_ciclo', 'motivi_economici', 'altro'] as const;
 
@@ -257,6 +282,7 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
     uid,
     versione,
     estraiElenco,
+    tieniElenco,
   );
   const sezioni = useLettura('/api/admin/sections/scoped?grado=primaria', uid, 0, estraiSezioni);
   // Con un anno di UNA sede in lavorazione (l'unico caso in cui questa pagina si apre) la sede è `sedeCorrente`. Un utente con più
@@ -313,6 +339,7 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
   }
 
   const { righe, totale, limite, posti, vociNonLette } = lettura.dati;
+  const obsoleta = lettura.obsoleta;
   const pagine = Math.max(1, Math.ceil(totale / limite));
   // Il filtro lo applica la route: `righe` è già la pagina giusta e `totale` è il totale del filtro.
   const visibili = righe;
@@ -339,6 +366,14 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
 
   return (
     <div>
+      {obsoleta && (
+        <div role="alert" className="mb-3 flex flex-wrap items-center gap-3">
+          <p className="font-maven text-sm text-kidville-error">
+            {obsoleta.stato === 0 ? t('erroreRete') : obsoleta.stato === 403 ? t('errorePermesso') : messaggioDaCorpo(obsoleta.corpo, t('erroreGenerico'))}
+          </p>
+          <button type="button" className={secondario} onClick={rilegge}>{t('riprova')}</button>
+        </div>
+      )}
       {oltre.map((p) => (
         <p key={p.fascia} role="status" className="mb-3 rounded-input border border-kidville-line bg-kidville-yellow-soft px-3 py-2 font-maven text-sm text-kidville-ink">
           {t('avvisoPosti', { fascia: fascia(p.fascia), iscritti: p.iscritti, posti: p.posti ?? 0 })}

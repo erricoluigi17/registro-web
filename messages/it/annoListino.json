@@ -81,6 +81,7 @@
   "retteMesiTitolo": "Mesi in cui si genera la retta",
   "retteMesiNota": "Vale per la riga “Tutte le fasce”. Di solito da settembre a giugno. Le rette già create non cambiano.",
   "retteMesiVuoti": "Scegli almeno un mese.",
+  "retteMesiElenco": "Mesi: {mesi}",
   "documentiSpiega": "I documenti da consegnare sono quelli che la famiglia porta alla segreteria (per esempio il certificato vaccinale): la segreteria li spunta quando arrivano.",
   "fasciaSpiega": "La fascia è il gruppo d’età della classe (per esempio nido primo anno, infanzia, primaria). Si usa quando l’importo cambia da un gruppo all’altro; la fascia di ogni classe si sceglie nel blocco «Classi dell’anno», più in basso.",
   "fasciaPerTutti": "Per tutti i bambini",

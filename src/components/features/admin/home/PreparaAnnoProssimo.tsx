@@ -86,7 +86,10 @@ async function leggi(url: string, userId: string, operazione: string): Promise<R
       logClient({ livello: 'warn', evento: 'fetch', messaggio: `${operazione} — richiesta non riuscita`, stato: res.status });
       return null;
     }
-    const corpo: unknown = await res.json().catch(() => null);
+    const corpo: unknown = await res.json().catch((err: unknown) => {
+      logClient({ livello: 'warn', evento: 'fetch', messaggio: `${operazione} — corpo illeggibile: ${nomeErrore(err)}`, stato: res.status });
+      return null;
+    });
     const data = (corpo as { data?: unknown } | null)?.data;
     return data !== null && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : null;
   } catch (err: unknown) {
