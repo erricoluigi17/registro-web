@@ -1,6 +1,5 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-// @ts-expect-error modulo .mjs senza tipi
 import { eResiduoGalleriaE2E, residuiGalleriaE2E } from '../../scripts/lib/galleria-residui-e2e.mjs'
 
 const SEED = 'e2e00000-0000-4000-8000-000000001005'
