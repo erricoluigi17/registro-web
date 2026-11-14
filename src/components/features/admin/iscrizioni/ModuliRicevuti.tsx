@@ -540,7 +540,9 @@ export function ModuliRicevuti() {
           abbinamenti: daMandare,
         }),
       })
+      let corpoIlleggibile = false
       const json = await res.json().catch((e: unknown) => {
+        corpoIlleggibile = true
         logClient({
           livello: 'warn',
           evento: 'react',
@@ -549,6 +551,13 @@ export function ModuliRicevuti() {
         })
         return {} as { error?: string; codice?: string }
       })
+      // Un 200 col corpo illeggibile NON è un successo: non sappiamo se l'import sia andato a buon fine, e «importata»
+      // sarebbe una promessa che nessuno ha verificato. Si mostra l'errore e si rilegge l'elenco (lo stato vero sta lì).
+      if (res.ok && corpoIlleggibile) {
+        setErroreImport(t('ricevutiImportFallito'))
+        await load(reFetchKey, filtri.chiaveServer)
+        return
+      }
       if (!res.ok) {
         logClient({
           livello: 'warn',

@@ -465,10 +465,19 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
   const mostraModulo = !c.soloLettura && (soloTutte || rette.length === 0 || aperto);
   const fasceLibere = FASCE.filter((f) => !rette.some((r) => r.fascia === f));
   const tuttaLibera = rigaTutte === null;
+  // «Aggiungi» serve solo se c'è qualcosa da aggiungere: con «Tutte» e ogni fascia già coperte il modulo si aprirebbe senza scelta
+  // e «Salva» riscriverebbe la riga «Tutte» senza dirlo (per cambiare una riga c'è «Modifica»).
+  const haCosaAggiungere = tuttaLibera || fasceLibere.length > 0;
   const nomeMese = (m: number) => {
     const d = new Date(0);
     d.setUTCMonth(m - 1, 1);
     return new Intl.DateTimeFormat(lingua, { month: 'long', timeZone: 'UTC' }).format(d);
+  };
+  /** Sola lettura: su quali mesi vale la retta di una riga (quelli suoi, o quelli che valgono ora per tutti), nell'ordine dell'anno. */
+  const mesiDi = (r: RigaRetta): string => {
+    const validi = r.mesi ?? mesiEffettivi;
+    const nomi = MESI_ANNO.filter((m) => validi.includes(m)).map(nomeMese);
+    return t('retteMesiElenco', { mesi: new Intl.ListFormat(lingua, { style: 'long', type: 'conjunction' }).format(nomi) });
   };
 
   const chiudi = () => {
@@ -538,6 +547,7 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
         c.soloLettura ? (
           <p className="mt-2 font-maven text-sm text-kidville-ink">
             <strong>{t('fasciaPerTutti')}</strong> {rigaTutte && rigaTutte.importo !== null ? formatEuro(rigaTutte.importo) : ''}
+            {rigaTutte && <span className="block text-kidville-sub">{mesiDi(rigaTutte)}</span>}
           </p>
         ) : (
           <p className={hint}>{t('retteSalvataNelCampo')}</p>
@@ -548,6 +558,7 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
             <li key={r.fascia ?? 'tutte'} className={rigaClasse}>
               <strong>{c.fasciaNome(r.fascia)}</strong>
               <span>{r.importo === null ? '' : formatEuro(r.importo)}</span>
+              {c.soloLettura && <span className="basis-full text-kidville-sub">{mesiDi(r)}</span>}
               {!c.soloLettura && (
                 <>
                   <button type="button" className={btnSecondario} disabled={occupato} onClick={() => modifica(r)}>
@@ -562,7 +573,7 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
           ))}
         </ul>
       )}
-      {!c.soloLettura && !mostraModulo && (
+      {!c.soloLettura && !mostraModulo && haCosaAggiungere && (
         <div className="mt-3">
           <button type="button" className={btnSecondario} disabled={occupato} onClick={aggiungi}>
             {t('retteAggiungi')}

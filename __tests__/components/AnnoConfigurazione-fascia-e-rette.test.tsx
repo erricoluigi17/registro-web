@@ -27,7 +27,7 @@ type RigaQuota = { voce: string; fascia: string | null; importo: number; scadenz
 const retta = (fascia: string | null, importo: number): RigaRetta => ({ voce: 'retta', fascia, payment_category_id: null, importo, mesi: null })
 
 const fetchMock = vi.fn()
-let lettura: { rette: RigaRetta[]; fasce: string[]; quote: RigaQuota[] }
+let lettura: { rette: RigaRetta[]; fasce: string[]; quote: RigaQuota[]; mesi?: number[] }
 
 const risposta = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: async () => body })
 
@@ -38,7 +38,7 @@ beforeEach(() => {
     const metodo = init?.method ?? 'GET'
     if (metodo !== 'GET') return risposta({ success: true, data: { cambiato: true } })
     if (String(url).endsWith('/rette')) {
-      return risposta({ success: true, data: { rette: lettura.rette, mesi_effettivi: { retta: DIECI, servizio: DIECI }, fasce_in_uso: lettura.fasce } })
+      return risposta({ success: true, data: { rette: lettura.rette, mesi_effettivi: { retta: lettura.mesi ?? DIECI, servizio: DIECI }, fasce_in_uso: lettura.fasce } })
     }
     if (String(url).endsWith('/quote')) return risposta({ success: true, data: { quote: lettura.quote } })
     return risposta({ success: true, data: { quote: [], moduli: [], posti: [], sezioni: [] } })
@@ -138,6 +138,21 @@ describe('Rette: alcune classi hanno una fascia', () => {
     expect((within(g).getByLabelText(itAnno.etichettaImporto) as HTMLInputElement).value).toBe('')
   })
 
+  it('con tutte le fasce già coperte (Tutte + una riga per fascia) «Aggiungi» non c\'è: non riscriverebbe la riga «Tutte» in silenzio', async () => {
+    lettura.fasce = ['infanzia']
+    lettura.rette = [retta(null, 150), ...['nido_1', 'nido_2', 'primavera', 'infanzia', 'primaria', 'spazio_bambini'].map((f) => retta(f, 280))]
+    const g = await apriRette()
+    expect(await within(g).findAllByRole('listitem')).toHaveLength(7)
+    expect(within(g).queryByRole('button', { name: itAnno.retteAggiungi })).toBeNull()
+  })
+
+  it('«Aggiungi» c\'è se manca solo la riga «Tutte» (nessuna fascia libera ma «Tutte» libera)', async () => {
+    lettura.fasce = ['infanzia']
+    lettura.rette = ['nido_1', 'nido_2', 'primavera', 'infanzia', 'primaria', 'spazio_bambini'].map((f) => retta(f, 280))
+    const g = await apriRette()
+    expect(await within(g).findByRole('button', { name: itAnno.retteAggiungi })).toBeInTheDocument()
+  })
+
   it('senza nessuna retta il modulo c’è subito (non c’è niente da modificare)', async () => {
     lettura.fasce = ['infanzia']
     const g = await apriRette()
@@ -164,6 +179,25 @@ describe('Rette: un anno che si può solo leggere', () => {
     expect(await within(g).findByText('180,00', { exact: false })).toBeInTheDocument()
     expect(within(g).queryByRole('textbox')).toBeNull()
     expect(within(g).queryByRole('button')).toBeNull()
+  })
+
+  it('si vede su quali mesi vale la retta (quelli del database, nomi dalla lingua), anche per le righe per fascia', async () => {
+    lettura.fasce = ['infanzia']
+    lettura.rette = [retta(null, 180), retta('infanzia', 250)]
+    lettura.mesi = [9, 10, 11]
+    render(<AnnoConfigurazione userId={USER} annoSedeId={ANNO} stato="in_chiusura" onCambiata={() => {}} />)
+    const g = await screen.findByRole('group', { name: itAnno.retteTitolo })
+    const righe = await within(g).findAllByRole('listitem')
+    expect(righe).toHaveLength(2)
+    for (const r of righe) expect(r.textContent).toMatch(/Mesi: settembre, ottobre e novembre/)
+  })
+
+  it('una sola retta per tutti, sola lettura: anche lì i mesi si leggono', async () => {
+    lettura.rette = [retta(null, 180)]
+    lettura.mesi = [9, 10]
+    render(<AnnoConfigurazione userId={USER} annoSedeId={ANNO} stato="chiuso" onCambiata={() => {}} />)
+    const g = await screen.findByRole('group', { name: itAnno.retteTitolo })
+    expect(await within(g).findByText(/Mesi: settembre e ottobre/)).toBeInTheDocument()
   })
 })
 

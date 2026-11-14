@@ -63,6 +63,7 @@ const s = {
   confermato: true,
   rifiutaModulo: false,
   elencoVuotoDopoSpunta: false,
+  letturaElencoCade: false, // la rilettura dell'elenco risponde 503 (la rete cade dopo un incasso)
   spuntato: false,
   confermata: false,
   quota: 'da_pagare' as 'da_pagare' | 'assente' | 'saldata', // la quota che il server legge per la riga
@@ -138,6 +139,7 @@ function risposta(url: string, metodo: string, body: Record<string, unknown>): R
     const q = new URL(url, 'http://localhost').searchParams
     const vista = q.get('vista')
     const filtro = q.get('conferma')
+    if (s.letturaElencoCade && url.includes('/conferme?')) return { status: 503, body: { error: 'non disponibile' } }
     if (vista === 'nuove' && s.nuoveVuote) return ok({ righe: [], pagina: 1, limite: 100, totale: 0, posti: [] })
     if (vista === 'nuove') return ok({ righe: [rigaNuova()], pagina: 1, limite: 100, totale: 1, posti: [] })
     // il filtro «non hanno risposto» dopo la conferma non ha più nessuno; «mancano moduli» dopo l'ultima spunta nemmeno
@@ -184,6 +186,7 @@ beforeEach(() => {
   s.quotaRitiro = 'tolta'
   s.rifiutaModulo = false
   s.elencoVuotoDopoSpunta = false
+  s.letturaElencoCade = false
   s.nonRinnovaMotivo = undefined
   s.nuoveVuote = false
   s.incassoRitardo = null
@@ -1046,6 +1049,19 @@ describe('ConfermeClient · E4 · l’incasso dalla riga', () => {
     await waitFor(() => expect(rigaViva()).toBeNull())
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(valore(screen.getByRole('dialog'), 'Resta')).toMatch(/€\s?0,00/)
+  })
+
+  it('se la rilettura dopo l\'incasso cade, la finestra «Pagamento saldato» resta e l\'elenco di prima non sparisce', async () => {
+    const finestra = await apriIncasso()
+    s.letturaElencoCade = true // il pagamento è registrato, ma l'elenco non si rilegge
+    fireEvent.click(within(finestra).getByRole('button', { name: /Registra € 100,00/ }))
+    await within(finestra).findByText('Pagamento saldato')
+    const avviso = await screen.findByRole('alert', { hidden: true })
+    expect(avviso).toHaveTextContent('non disponibile')
+    expect(within(avviso).getByRole('button', { name: itConferme.riprova, hidden: true })).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(within(screen.getByRole('dialog')).getByText('Pagamento saldato')).toBeInTheDocument()
+    expect(rigaViva()).not.toBeNull()
   })
 
   it('«Invia fattura» non è accanto alla conferma del pagamento: sta in un punto separato, dopo «Chiudi»', async () => {
