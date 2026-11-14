@@ -318,17 +318,27 @@ const btnSecondario =
 function SchedaQuote(c: Comuni) {
   const t = useTranslations('annoListino');
   const lettura = useLettura(`${c.base}/quote`, c.userId, c.versione, estraiQuote);
+  // Le fasce in uso le dice la lettura delle rette: se NESSUNA classe ha una fascia, scegliere la fascia di una quota è una scelta inutile.
+  // `null` = non lo so ancora (la scelta non si mostra finché non è arrivato); lettura fallita = si mostra, come prima.
+  const fasce = useLettura(`${c.base}/rette`, c.userId, c.versione, estraiRette);
+  const senzaFasce: boolean | null = fasce.fase === 'ok' ? fasce.dati.fasceInUso.length === 0 : fasce.fase === 'errore' ? false : null;
   if (lettura.fase !== 'ok') return <StatoLettura lettura={lettura} testoErrore={(e) => (e.tipo === 'rete' ? t('erroreRete') : e.tipo === 'permesso' ? t('errorePermesso') : messaggioDaCorpo(e.tipo === 'risposta' ? e.corpo : null, t('erroreLettura')))} />;
   const { quote } = lettura.dati;
+  const righeDi = (voce: VoceQuota) => quote.filter((q) => q.voce === voce);
+  // La scelta della fascia serve se almeno una classe ha una fascia, oppure se una quota già salvata ne ha una (va potuta cambiare).
+  const sceltaDi = (righe: RigaQuota[]): boolean | null => (senzaFasce === null ? null : !senzaFasce || righe.some((r) => r.fascia !== null));
+  const sceltaConferma = sceltaDi(righeDi('quota_conferma'));
+  const sceltaNuova = sceltaDi(righeDi('quota_nuova'));
   return (
     <div>
-      <BloccoQuota c={c} voce="quota_conferma" titolo={t('quotaConfermaTitolo')} nota={t('quotaConfermaNota')} righe={quote.filter((q) => q.voce === 'quota_conferma')} />
-      <BloccoQuota c={c} voce="quota_nuova" titolo={t('quotaNuovaTitolo')} nota={t('quotaNuovaNota')} righe={quote.filter((q) => q.voce === 'quota_nuova')} />
+      {(sceltaConferma === true || sceltaNuova === true) && <p className={hint}>{t('fasciaSpiega')}</p>}
+      <BloccoQuota c={c} voce="quota_conferma" titolo={t('quotaConfermaTitolo')} nota={t('quotaConfermaNota')} righe={righeDi('quota_conferma')} sceltaFascia={sceltaConferma} />
+      <BloccoQuota c={c} voce="quota_nuova" titolo={t('quotaNuovaTitolo')} nota={t('quotaNuovaNota')} righe={righeDi('quota_nuova')} sceltaFascia={sceltaNuova} />
     </div>
   );
 }
 
-function BloccoQuota({ c, voce, titolo, nota, righe }: { c: Comuni; voce: VoceQuota; titolo: string; nota: string; righe: RigaQuota[] }) {
+function BloccoQuota({ c, voce, titolo, nota, righe, sceltaFascia }: { c: Comuni; voce: VoceQuota; titolo: string; nota: string; righe: RigaQuota[]; sceltaFascia: boolean | null }) {
   const t = useTranslations('annoListino');
   const id = useId();
   const area = `quote-${voce}`;
@@ -362,13 +372,14 @@ function BloccoQuota({ c, voce, titolo, nota, righe }: { c: Comuni; voce: VoceQu
     <fieldset className="mt-4 border-t border-kidville-line pt-4 first:mt-0 first:border-t-0 first:pt-0">
       <legend className={sottoTitolo}>{titolo}</legend>
       <p className={hint}>{nota}</p>
+      {sceltaFascia === false && <p className={hint}>{t('quotaSenzaFasce')}</p>}
       {righe.length === 0 ? (
         <p className="mt-2 font-maven text-sm text-kidville-sub">{t('quotaNessuna')}</p>
       ) : (
         <ul className="mt-2">
           {righe.map((r) => (
             <li key={`${r.fascia ?? 'tutte'}`} className={rigaClasse}>
-              <strong>{c.fasciaNome(r.fascia)}</strong>
+              <strong>{sceltaFascia === false ? t('fasciaPerTutti') : c.fasciaNome(r.fascia)}</strong>
               <span>{r.importo === null ? '' : formatEuro(r.importo)}</span>
               <span>{r.scadenza ? t('quotaScade', { data: dataBreve(r.scadenza) }) : t('quotaScadenzaAutomatica')}</span>
               <button type="button" className={btnSecondario} disabled={occupato} onClick={() => modifica(r)}>
@@ -382,15 +393,17 @@ function BloccoQuota({ c, voce, titolo, nota, righe }: { c: Comuni; voce: VoceQu
         </ul>
       )}
       <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-3">
-        <div>
-          <label htmlFor={`${id}-fascia`} className={label}>{t('etichettaFascia')}</label>
-          <select id={`${id}-fascia`} value={fascia} onChange={(e) => setFascia(e.target.value)} className={input}>
-            <option value={TUTTE}>{t('fasciaTutte')}</option>
-            {FASCE.map((f: Fascia) => (
-              <option key={f} value={f}>{c.fasciaNome(f)}</option>
-            ))}
-          </select>
-        </div>
+        {sceltaFascia === true && (
+          <div>
+            <label htmlFor={`${id}-fascia`} className={label}>{t('etichettaFascia')}</label>
+            <select id={`${id}-fascia`} value={fascia} onChange={(e) => setFascia(e.target.value)} className={input}>
+              <option value={TUTTE}>{t('fasciaTutte')}</option>
+              {FASCE.map((f: Fascia) => (
+                <option key={f} value={f}>{c.fasciaNome(f)}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label htmlFor={`${id}-importo`} className={label}>{t('etichettaImporto')}</label>
           <input id={`${id}-importo`} type="text" inputMode="decimal" autoComplete="off" value={importo} onChange={(e) => setImporto(e.target.value)} className={`${input} w-32`} />
@@ -440,13 +453,39 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
   const [fascia, setFascia] = useState<string>(TUTTE);
   const [importo, setImporto] = useState(() => importoDi(null));
   const [mesi, setMesi] = useState<number[]>(mesiEffettivi);
+  // Il modulo con più fasce: chiuso finché non si preme «Modifica» su una riga o «Aggiungi»; `inModifica` = sta cambiando una riga che c'è già.
+  const [aperto, setAperto] = useState(false);
+  const [inModifica, setInModifica] = useState(false);
   const occupato = c.inCorso !== null || c.soloLettura;
+  // Nessuna classe ha una fascia (e nessuna riga ne ha una): la retta è una sola e vale per tutti. Niente scelta della fascia, niente elenco.
+  const soloTutte = fasceInUso.length === 0 && rette.every((r) => r.fascia === null);
+  const rigaTutte = rette.find((r) => r.fascia === null) ?? null;
+  // Una cosa sola per la stessa retta: o c'è la riga (con «Modifica»), o c'è il modulo. Con una sola retta il modulo È la retta;
+  // con più fasce il modulo compare solo per cambiare una riga o per aggiungerne una.
+  const mostraModulo = !c.soloLettura && (soloTutte || rette.length === 0 || aperto);
+  const fasceLibere = FASCE.filter((f) => !rette.some((r) => r.fascia === f));
+  const tuttaLibera = rigaTutte === null;
+  // «Aggiungi» serve solo se c'è qualcosa da aggiungere: con «Tutte» e ogni fascia già coperte il modulo si aprirebbe senza scelta
+  // e «Salva» riscriverebbe la riga «Tutte» senza dirlo (per cambiare una riga c'è «Modifica»).
+  const haCosaAggiungere = tuttaLibera || fasceLibere.length > 0;
   const nomeMese = (m: number) => {
     const d = new Date(0);
     d.setUTCMonth(m - 1, 1);
     return new Intl.DateTimeFormat(lingua, { month: 'long', timeZone: 'UTC' }).format(d);
   };
+  /** Sola lettura: su quali mesi vale la retta di una riga (quelli suoi, o quelli che valgono ora per tutti), nell'ordine dell'anno. */
+  const mesiDi = (r: RigaRetta): string => {
+    const validi = r.mesi ?? mesiEffettivi;
+    const nomi = MESI_ANNO.filter((m) => validi.includes(m)).map(nomeMese);
+    return t('retteMesiElenco', { mesi: new Intl.ListFormat(lingua, { style: 'long', type: 'conjunction' }).format(nomi) });
+  };
 
+  const chiudi = () => {
+    setAperto(false);
+    setInModifica(false);
+    setFascia(TUTTE);
+    setImporto(importoDi(null));
+  };
   const salva = async () => {
     const n = importoDa(importo);
     if (n === null) return c.setEsito({ area, tipo: 'errore', errore: { tipo: 'campo', chiave: 'importo' } });
@@ -455,17 +494,32 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
     if (perTutte && mesi.length === 0) return c.setEsito({ area, tipo: 'errore', errore: { tipo: 'campo', chiave: 'mesi' } });
     const mandaMesi = perTutte && !stessiMesi(mesi, mesiEffettivi);
     const corpo = { voce: 'retta', fascia: perTutte ? null : fascia, importo: n, ...(mandaMesi ? { mesi: [...mesi].sort((a, b) => a - b) } : {}) };
-    await c.scrivi(area, 'PUT', `${c.base}/rette`, corpo, (d) => (d?.cambiato === false ? t('nessunaModifica') : c.annoEtichetta ? t('retteSalvataAnno', { anno: c.annoEtichetta }) : t('retteSalvata')));
+    const ok = await c.scrivi(area, 'PUT', `${c.base}/rette`, corpo, (d) => (d?.cambiato === false ? t('nessunaModifica') : c.annoEtichetta ? t('retteSalvataAnno', { anno: c.annoEtichetta }) : t('retteSalvata')));
+    // Salvata: con più fasce il modulo si richiude e resta l'elenco, con la retta com'è adesso.
+    if (ok && !soloTutte && rette.length > 0) {
+      setAperto(false);
+      setInModifica(false);
+    }
   };
   const togli = async (r: RigaRetta) => {
     const ok = await c.scrivi(area, 'PUT', `${c.base}/rette`, { voce: 'retta', fascia: r.fascia, importo: null }, () => t('retteTolta'));
     // La riga non c'è più: la casella non deve conservare il suo importo (un altro Salva lo riscriverebbe senza che nessuno l'abbia digitato).
     if (ok && (r.fascia ?? TUTTE) === fascia) setImporto('');
+    if (ok && inModifica && (r.fascia ?? TUTTE) === fascia) chiudi();
   };
   const modifica = (r: RigaRetta) => {
     c.setEsito(null);
     setFascia(r.fascia ?? TUTTE);
     setImporto(r.importo === null ? '' : String(r.importo).replace('.', ','));
+    setInModifica(true);
+    setAperto(true);
+  };
+  const aggiungi = () => {
+    c.setEsito(null);
+    setFascia(tuttaLibera ? TUTTE : (fasceLibere[0] ?? TUTTE));
+    setImporto('');
+    setInModifica(false);
+    setAperto(true);
   };
   const scegliFascia = (f: string) => {
     setFascia(f);
@@ -475,65 +529,105 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
   // Un 150,00 è quasi sempre l'importo copiato dal listino precedente: una nota neutra, mai un blocco.
   // Solo mentre l'anno si prepara: sull'anno in corso o chiuso «controllalo» non ha caselle da toccare.
   const copiata = (c.stato === 'in_preparazione' || c.stato === 'iscrizioni_aperte') && rette.some((r) => r.importo === 150);
+  // Con più fasce la scelta si fa fra quelle che non hanno ancora una retta; cambiando una riga che c'è, la fascia è fissa.
+  const sceltaFascia = !soloTutte && !inModifica;
 
   return (
     <fieldset className="mt-4 first:mt-0">
       <legend className={sottoTitolo}>{c.annoEtichetta && (c.stato === 'in_preparazione' || c.stato === 'iscrizioni_aperte') ? t('retteAnnoTitolo', { anno: c.annoEtichetta }) : t('retteTitolo')}</legend>
       <p className={hint}>{t('retteNota')}</p>
-      {fasceInUso.length === 0 && <p className={hint}>{t('retteSenzaFasce')}</p>}
+      <p className={hint}>{soloTutte ? t('retteSenzaFasce') : t('fasciaSpiega')}</p>
       {copiata && <p className={hint}>{t('retteCopiata')}</p>}
       {rette.length === 0 ? (
         <>
           <p className="mt-2 font-maven text-sm text-kidville-sub">{t('retteNessuna')}</p>
           {!c.soloLettura && <p className="font-maven text-sm text-kidville-sub">{t('retteNessunaScrivi')}</p>}
         </>
+      ) : soloTutte ? (
+        c.soloLettura ? (
+          <p className="mt-2 font-maven text-sm text-kidville-ink">
+            <strong>{t('fasciaPerTutti')}</strong> {rigaTutte && rigaTutte.importo !== null ? formatEuro(rigaTutte.importo) : ''}
+            {rigaTutte && <span className="block text-kidville-sub">{mesiDi(rigaTutte)}</span>}
+          </p>
+        ) : (
+          <p className={hint}>{t('retteSalvataNelCampo')}</p>
+        )
       ) : (
         <ul className="mt-2">
           {rette.map((r) => (
             <li key={r.fascia ?? 'tutte'} className={rigaClasse}>
               <strong>{c.fasciaNome(r.fascia)}</strong>
               <span>{r.importo === null ? '' : formatEuro(r.importo)}</span>
-              <button type="button" className={btnSecondario} disabled={occupato} onClick={() => modifica(r)}>
-                {t('modifica')}
-              </button>
-              <button type="button" className={btnSecondario} disabled={occupato} onClick={() => void togli(r)}>
-                {t('togli')}
-              </button>
+              {c.soloLettura && <span className="basis-full text-kidville-sub">{mesiDi(r)}</span>}
+              {!c.soloLettura && (
+                <>
+                  <button type="button" className={btnSecondario} disabled={occupato} onClick={() => modifica(r)}>
+                    {t('modifica')}
+                  </button>
+                  <button type="button" className={btnSecondario} disabled={occupato} onClick={() => void togli(r)}>
+                    {t('togli')}
+                  </button>
+                </>
+              )}
             </li>
           ))}
         </ul>
       )}
-      <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-3">
-        <div>
-          <label htmlFor={`${id}-fascia`} className={label}>{t('etichettaFascia')}</label>
-          <select id={`${id}-fascia`} value={fascia} onChange={(e) => scegliFascia(e.target.value)} disabled={c.soloLettura} className={input}>
-            <option value={TUTTE}>{t('fasciaTutte')}</option>
-            {FASCE.map((f: Fascia) => (
-              <option key={f} value={f}>{c.fasciaNome(f)}</option>
-            ))}
-          </select>
+      {!c.soloLettura && !mostraModulo && haCosaAggiungere && (
+        <div className="mt-3">
+          <button type="button" className={btnSecondario} disabled={occupato} onClick={aggiungi}>
+            {t('retteAggiungi')}
+          </button>
         </div>
-        <div>
-          <label htmlFor={`${id}-importo`} className={label}>{t('etichettaImporto')}</label>
-          <input id={`${id}-importo`} type="text" inputMode="decimal" autoComplete="off" value={importo} onChange={(e) => setImporto(e.target.value)} disabled={c.soloLettura} className={`${input} w-32`} />
-        </div>
-        <button type="button" onClick={() => void salva()} disabled={occupato} className={btnPrimary}>
-          {c.inCorso === area ? t('salvataggioInCorso') : t('salva')}
-        </button>
-      </div>
-      {fascia === TUTTE && (
-        <fieldset className="mt-4">
-          <legend className={label}>{t('retteMesiTitolo')}</legend>
-          <p className={hint}>{t('retteMesiNota')}</p>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
-            {MESI_ANNO.map((m) => (
-              <label key={m} className="flex items-center gap-1.5 font-maven text-sm text-kidville-ink">
-                <input type="checkbox" checked={mesi.includes(m)} disabled={c.soloLettura} onChange={(e) => scegliMese(m, e.target.checked)} />
-                {nomeMese(m)}
-              </label>
-            ))}
+      )}
+      {mostraModulo && (
+        <>
+          {inModifica && <p className="mt-3 font-maven text-sm font-semibold text-kidville-ink">{t('retteStaiCambiando', { fascia: c.fasciaNome(fascia === TUTTE ? null : fascia) })}</p>}
+          <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-3">
+            {sceltaFascia && (
+              <div>
+                <label htmlFor={`${id}-fascia`} className={label}>{t('etichettaFascia')}</label>
+                <select id={`${id}-fascia`} value={fascia} onChange={(e) => scegliFascia(e.target.value)} className={input}>
+                  {tuttaLibera && <option value={TUTTE}>{t('fasciaTutte')}</option>}
+                  {fasceLibere.map((f: Fascia) => (
+                    <option key={f} value={f}>{c.fasciaNome(f)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div>
+              <label htmlFor={`${id}-importo`} className={label}>{t('etichettaImporto')}</label>
+              <input id={`${id}-importo`} type="text" inputMode="decimal" autoComplete="off" value={importo} onChange={(e) => setImporto(e.target.value)} className={`${input} w-32`} />
+            </div>
+            <button type="button" onClick={() => void salva()} disabled={occupato} className={btnPrimary}>
+              {c.inCorso === area ? t('salvataggioInCorso') : t('salva')}
+            </button>
+            {soloTutte && rigaTutte !== null && (
+              <button type="button" className={btnSecondario} disabled={occupato} onClick={() => void togli(rigaTutte)}>
+                {t('togli')}
+              </button>
+            )}
+            {!soloTutte && rette.length > 0 && (
+              <button type="button" className={btnSecondario} disabled={c.inCorso !== null} onClick={chiudi}>
+                {t('annulla')}
+              </button>
+            )}
           </div>
-        </fieldset>
+          {fascia === TUTTE && (
+            <fieldset className="mt-4">
+              <legend className={label}>{t('retteMesiTitolo')}</legend>
+              <p className={hint}>{t('retteMesiNota')}</p>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+                {MESI_ANNO.map((m) => (
+                  <label key={m} className="flex items-center gap-1.5 font-maven text-sm text-kidville-ink">
+                    <input type="checkbox" checked={mesi.includes(m)} onChange={(e) => scegliMese(m, e.target.checked)} />
+                    {nomeMese(m)}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
+        </>
       )}
       {c.esitoDi(area)}
     </fieldset>
@@ -550,6 +644,7 @@ function SchedaModuli(c: Comuni) {
   if (lettura.fase !== 'ok') return <StatoLettura lettura={lettura} testoErrore={(e) => (e.tipo === 'rete' ? t('erroreRete') : e.tipo === 'permesso' ? t('errorePermesso') : messaggioDaCorpo(e.tipo === 'risposta' ? e.corpo : null, t('erroreLettura')))} />;
   return (
     <div>
+      <p className={hint}>{t('documentiSpiega')}</p>
       <BloccoModuli c={c} lista="conferma" titolo={t('moduliConfermaTitolo')} righe={lettura.dati.filter((m) => m.lista === 'conferma')} />
       <BloccoModuli c={c} lista="nuova" titolo={t('moduliNuovaTitolo')} righe={lettura.dati.filter((m) => m.lista === 'nuova')} />
     </div>

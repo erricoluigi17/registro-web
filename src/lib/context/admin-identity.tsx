@@ -40,6 +40,18 @@ function readUserId(): string | null {
   }
 }
 
+/**
+ * Appende `userId` all'href: `?` se non c'è ancora una query, `&` se c'è già, e
+ * sempre PRIMA di un eventuale `#frammento`. Senza userId l'href resta invariato.
+ */
+export function aggiungiUserId(href: string, userId: string | null): string {
+  if (!userId) return href;
+  const hash = href.indexOf('#');
+  const base = hash === -1 ? href : href.slice(0, hash);
+  const frammento = hash === -1 ? '' : href.slice(hash);
+  return `${base}${base.includes('?') ? '&' : '?'}userId=${userId}${frammento}`;
+}
+
 // userId non cambia a runtime nella shell admin: subscribe è un no-op stabile.
 const subscribe = () => () => {};
 const serverSnapshot = () => null;
@@ -63,7 +75,7 @@ export function AdminIdentityProvider({ children }: { children: React.ReactNode 
       });
   }, [userId]);
 
-  const withUser = (href: string) => (userId ? `${href}?userId=${userId}` : href);
+  const withUser = (href: string) => aggiungiUserId(href, userId);
 
   return (
     <AdminIdentityContext.Provider value={{ userId, ruolo, withUser }}>

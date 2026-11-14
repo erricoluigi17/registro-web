@@ -213,16 +213,26 @@ function Cruscotto({ annoSedeId }: { annoSedeId: string }) {
           <>
             <h3 className="mb-1 mt-4 font-maven text-sm font-semibold text-kidville-ink">{t('sezioniTitolo')}</h3>
             <p className="mb-2 font-maven text-xs text-kidville-sub">{t('sezioniLegenda')}</p>
-            <ul className="grid gap-1 sm:grid-cols-2">
-              {c.sezioni.map((s) => (
-                <li key={s.section_id ?? 'senza'} className="flex justify-between gap-2 font-maven text-sm text-kidville-ink">
-                  <span>{s.nome ?? t('sezioneSenza')}</span>
-                  <span className="text-right text-kidville-sub">
-                    {t('sezioneRiga', { n: s.iscritti, m: s.completi })}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            {/* Una riga per classe: il nome a sinistra (va a capo, non spinge) e i numeri in colonne allineate a destra, ciascuna con la sua
+                intestazione. Nessuna larghezza minima: a 375 px sta nello schermo. I posti per classe il server non li dà (solo per fascia). */}
+            <table aria-label={t('sezioniTitolo')} className="w-full table-fixed border-collapse text-left font-maven text-sm text-kidville-ink">
+              <thead>
+                <tr className="border-b border-kidville-line text-xs text-kidville-sub">
+                  <th scope="col" className="py-1 pr-2 font-semibold">{t('colClasse')}</th>
+                  <th scope="col" className="w-20 py-1 pl-2 text-right font-semibold">{t('colInLista')}</th>
+                  <th scope="col" className="w-20 py-1 pl-2 text-right font-semibold">{t('colIscritti')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {c.sezioni.map((s) => (
+                  <tr key={s.section_id ?? 'senza'} className="border-b border-kidville-line last:border-b-0">
+                    <td className="break-words py-1.5 pr-2">{s.nome ?? t('sezioneSenza')}</td>
+                    <td className="py-1.5 pl-2 text-right tabular-nums">{numero.format(s.iscritti)}</td>
+                    <td className="py-1.5 pl-2 text-right tabular-nums">{numero.format(s.completi)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </>
         )}
       </Blocco>

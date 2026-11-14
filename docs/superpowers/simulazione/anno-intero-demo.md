@@ -158,8 +158,8 @@ risultati ci sono solo uuid e conteggi. Si chiamano con una `SELECT`, che il fre
 | Funzione | Che cosa fa |
 |---|---|
 | `public.demo_fotografa(p_scuola)` | Scatta la fotografia (versione 2: configurazione dell'anno nuovo, frequenze e date dell'anno corrente, conteggi), la **salva** in `demo_fotografie` e la restituisce. `scattata_il` è la **partenza**. Si ferma con `DEMO_ANNO_NUOVO_NON_UNO` se la sede non ha un solo anno in preparazione o con le iscrizioni aperte. |
-| `public.demo_ripristina(p_scuola, p_partenza, p_prova_a_secco DEFAULT true, p_fotografia DEFAULT NULL)` | Riporta la Demo alla partenza in un colpo solo (passi 1, 2, 3, 4 e 4bis del pacchetto): stati degli anni, gettoni, passaggi e cronologia; incassi e sezioni di anni nati dopo la partenza, e periodi di scrutinio nati dopo; azzeramento dell'anno nuovo dalla fotografia. A secco fa tutto e poi alza `DEMO_PROVA_A_SECCO` col riassunto: non resta scritto niente. |
-| `public.demo_controllo(p_scuola, p_partenza DEFAULT NULL, p_fotografia DEFAULT NULL)` | Solo lettura: una riga per controllo (`controllo`, `ok`, `dettaglio`), tutte devono essere `ok`. Senza partenza usa l'ultima fotografia salvata. |
+| `public.demo_ripristina(p_scuola, p_partenza, p_prova_a_secco DEFAULT true, p_fotografia DEFAULT NULL)` | Riporta la Demo alla partenza in un colpo solo (passi 1, 2, 3, 4 e 4bis del pacchetto): stati degli anni, gettoni, passaggi e cronologia; incassi e sezioni di anni nati dopo la partenza, e periodi di scrutinio nati dopo; azzeramento dell'anno nuovo dalla fotografia; **i genitori di prova** nati dopo la partenza (criteri stretti, sotto). A secco fa tutto e poi alza `DEMO_PROVA_A_SECCO` col riassunto: non resta scritto niente. |
+| `public.demo_controllo(p_scuola, p_partenza DEFAULT NULL, p_fotografia DEFAULT NULL)` | Solo lettura: una riga per controllo (`controllo`, `ok`, `dettaglio`), tutte devono essere `ok`. Senza partenza usa l'ultima fotografia salvata. Comprende «nessun genitore di prova (email .test) nato dopo la partenza e senza legami». |
 
 **Procedura, passo per passo** (`D` = l'uuid della sede di Demo, che comincia per `e2e00000`):
 
@@ -191,9 +191,30 @@ fermerebbe) e poi **rimette il valore che c'era**; il gettone che l'oblio lascia
 `scrutinio_giudizio_descrittivo`: nel riassunto (`cascata_dei_periodi_di_scrutinio`) ci sono i conteggi di scrutini e giudizi descrittivi, contati
 prima. Il rischio è limitato alla Demo, e la prova a secco li mostra prima del vero.
 
+**I genitori di prova** (migrazione `20261114195853_demo_ripristina_genitori_di_prova.sql`). Quando una prova iscrive un bambino nuovo dal modulo pubblico e
+la segreteria lo importa, nascono un alunno, un genitore (`parents`, col suo `auth_user_id`), il suo utente (`utenti`, ruolo `genitore`) e l'utente di accesso
+(`auth.users`). Domanda e alunno se ne vanno già; **il genitore, il suo `utenti` e il suo `auth.users` si tolgono solo se valgono TUTTE queste condizioni**:
+
+1. la riga `parents` è nata dopo la partenza;
+2. dopo l'azzeramento non ha più **nessun legame** con nessun alunno (`student_parents`, `legame_genitori_alunni`, `student_guardians` e ogni altra tabella che
+   lega un genitore a un alunno: la funzione le legge dalle chiavi esterne vere, non da un elenco);
+3. il suo utente **esiste** (se manca la riga `utenti` il genitore resta: ruolo e data non si possono verificare), ha ruolo `genitore`, è nato dopo la partenza, ha come sede (se ne ha una) una sede `e2e00000…` e **nessuna** riga in `utenti_scuole`
+   per una sede che non comincia per `e2e00000`;
+4. l'email dell'utente di accesso **finisce in `.test`** (il dominio riservato dallo standard, RFC 2606: non può essere di una persona vera, ed è quello che le
+   prove usano per regola). Senza utente di accesso l'email non si può verificare: il genitore resta.
+
+Resta anche un genitore a cui è attaccata una riga che una chiave NO ACTION/RESTRICT non lascerebbe cancellare (una firma, una voce, un registro…) o il cui
+accesso lo usa un altro genitore che resta; la cancellazione è per singolo genitore, e se una chiave NO ACTION non diretta (un figlio a cascata) la fa fallire, quel genitore resta e il ripristino prosegue. Chi resta per questo motivo compare in `lasciate` con `motivo` = nome del vincolo (mai dati personali; c'è anche un `NOTICE` con l'uuid). **Limite noto:** una chiave `DEFERRABLE INITIALLY DEFERRED` non diretta non scatta nel sotto-blocco ma a `SET CONSTRAINTS … IMMEDIATE`: il ripristino intero fallisce e non scrive niente. Si legge il messaggio d'errore, si toglie la riga a mano o si rifà il ripristino. Si tolgono **con lui** l'invito con le credenziali (contiene l'email) e le accettazioni dei consensi (senza chiave
+esterna); il resto (notifiche, sottoscrizioni push, sedi dell'utente, chat) va via a cascata. L'ordine è dipendenti, `parents`, `utenti`, `auth.users`.
+
+Nel riassunto c'è una voce dell'`azzeramento`, «genitori di prova nati dopo la partenza (solo email .test, senza legami né sedi vere)», con `tolte` e `lasciate`;
+**chi resta compare in `lasciate`, per tabella (`parents`, e `utenti` se è nato dopo la partenza) e uuid**. Un genitore legato a un alunno di una **sede vera** non è
+roba della prova: non si tocca e non si elenca; lo stesso un genitore nato dopo la partenza **senza alcun indizio di Demo** (nessun legame con alunni di prova, email non `.test`, nessuna sede `e2e00000…` dell'utente). L'email si confronta in minuscolo e senza spazi (`.TEST` vale come `.test`). Mai l'email nel riassunto: solo uuid e conteggi. `demo_controllo` segnala un genitore `.test` nato dopo la partenza
+e rimasto senza legami: se dopo il ripristino è rosso, un criterio l'ha tenuto fermo, e `lasciate` dice quale genitore guardare.
+
 **Che cosa NON copre** (si legge nel risultato, `incassi_su_voci_precedenti_non_toccati`, e nelle righe lasciate): un incasso nato dopo la partenza su una
-voce che c'era già prima; i file finti in Storage (si tolgono dalla dashboard, uno per nome esatto); `armadietto_richieste`, gli account dei genitori
-creati accogliendo una domanda, `alunni_classi_storico`, il CRM e `app_log` (non sono dati d'anno); una prova finita in una **sede vera**, che
+voce che c'era già prima; i file finti in Storage (si tolgono dalla dashboard, uno per nome esatto); `armadietto_richieste`, i genitori che non rispettano
+le quattro condizioni di sopra (un'email che non è `.test`, un legame ancora vivo, una sede vera), `alunni_classi_storico`, il CRM e `app_log` (non sono dati d'anno); una prova finita in una **sede vera**, che
 resta ferma al freno.
 
 Provato in `__tests__/db/demo-funzioni-ripristino.test.ts` (PGlite): una sede vera è rifiutata da tutte e tre le funzioni; la prova a secco non lascia
@@ -203,6 +224,11 @@ scritto niente; il ripristino vero, dopo un giro con quattro conferme, un «non 
 incassi, domande, alunni, periodi di scrutinio con i loro scrutini, sezioni dell'anno nato dopo), e un alunno nato in Demo ma con una voce di una sede
 vera resta fra le «lasciate»; le chiavi esterne composte tengono ferma una riga; il percorso con `p_fotografia` e la riga di log del successo
 (`app_log`) sono provati.
+I genitori di prova sono provati in `__tests__/db/demo-ripristina-genitori.test.ts` (PGlite, con `auth.users`, `utenti_scuole` e i legami come in produzione): uno
+che rispetta tutte le condizioni va via con utente, accesso, invito, consenso e notifica; ognuna delle condizioni, rotta da sola, lo fa restare (email non `.test`,
+suffisso diverso da `.test`, nato prima, utente nato prima, utente non genitore, sede principale vera, riga in `utenti_scuole` per una sede vera, legame vivo su
+ciascuna delle tre tabelle di legame, una firma attaccata, accesso condiviso); la prova a secco non scrive niente e dà lo stesso conteggio del vero;
+`demo_controllo` è rosso prima e verde dopo; una sede senza il prefisso è rifiutata.
 **Mai eseguite sul database di produzione** finché l'integrazione non applica la migrazione: la prima esecuzione è una prova a secco.
 
 ## Dopo: il ripristino a mano (file SQL: storia e riserva)
@@ -305,7 +331,7 @@ le righe **nate** nel collaudo si tolgono a mano; a quelle **cambiate** (nate pr
 (`legame_genitori_alunni`, `student_parents`) e l'invito con le credenziali (`iscrizioni_inviti_credenziali`). Questi **vanno via** insieme
 all'alunno e alla domanda che lo script toglie (sono della Demo e nati dopo la partenza), così l'anno nuovo torna davvero «appena nato».
 Restano invece, **elencati per uuid** fra le righe lasciate, gli **account** creati accogliendo la domanda (`parents`, `utenti`: li cancella solo
-chi sa che nessuno li usa) e il **CRM** (`crm_bambini`, `crm_schede`): un bambino del CRM che punta all'alunno o alla domanda li trattiene, e
+chi sa che nessuno li usa; **dal 14/11/2026 li toglie `demo_ripristina`, con i criteri della sezione precedente**) e il **CRM** (`crm_bambini`, `crm_schede`): un bambino del CRM che punta all'alunno o alla domanda li trattiene, e
 l'elenco dice perché quell'alunno non se n'è andato. Per le righe lasciate si decide a mano; l'invariante 11 conta gli alunni «in arrivo» rimasti
 senza più la frequenza nuova.
 

@@ -369,6 +369,8 @@ const FUNZIONI_SQL: Record<string, Voce> = {
   'sql::crm_quota_passa': ['sì', 'ricevute'],
   // 14/11/2026 (funzioni demo_*): toglie, nella sola sede di prova e per uuid, gli alunni nati dopo la partenza che nessuno usa; non fa elenchi.
   'sql::demo_ripristina': ['no-già', 'funzione-puntuale'],
+  // 14/11/2026 (genitori di prova): legge i legami di UN genitore con gli alunni (conta, e dice se sono di una sede di prova): non fa elenchi di bambini.
+  'sql::demo_i_genitore_legami': ['no-già', 'funzione-puntuale'],
   'sql::elimina_alunno_definitivo': ['no-già', 'esclude-in-arrivo'],
   'sql::fn_scuola_id_da_alunno': ['no-già', 'funzione-puntuale'],
   'sql::frequenza_segue_classe_alunno': ['no-già', 'funzione-per-sezione'],
@@ -555,7 +557,7 @@ describe('lock architettura · ogni lettura di `alunni` ha deciso che cosa fa da
     const conta = (e: Esito) => Object.values(TUTTE).filter(([x]) => x === e).length
     // Se cambiano, la classificazione è cambiata: va riletta, non solo aggiornata questa riga.
     expect({ no: conta('no'), 'no-già': conta('no-già'), sì: conta('sì'), daCorreggere: Object.keys(DA_CORREGGERE).length }).toEqual(
-      { no: 0, 'no-già': 216, sì: 69, daCorreggere: 0 }, // funzioni demo_*: +1 no-già (demo_ripristina). // 4.9 giro 1-bis: +1 no-già. // Riattiva giro 6: +1 no-già (anno_alunno_toglie_tracce_archiviazione). // Riattiva giro 5: +1 no-già (anno_alunno_archiviato_dal_passaggio). // giro 4: +1 sì (alunni_specchio_frequenza). 4.6.6: +2 sì (anteprimaDalListino, rette_da_generare), -1 no-già (genera_rette_mensili non legge più alunni). 4.7: +1 no-già (senza-firma-app), +2 sì (anno_cruscotto, anno_quota_piu_voci)
+      { no: 0, 'no-già': 217, sì: 69, daCorreggere: 0 }, // genitori di prova: +1 no-già (demo_i_genitore_legami). // funzioni demo_*: +1 no-già (demo_ripristina). // 4.9 giro 1-bis: +1 no-già. // Riattiva giro 6: +1 no-già (anno_alunno_toglie_tracce_archiviazione). // Riattiva giro 5: +1 no-già (anno_alunno_archiviato_dal_passaggio). // giro 4: +1 sì (alunni_specchio_frequenza). 4.6.6: +2 sì (anteprimaDalListino, rette_da_generare), -1 no-già (genera_rette_mensili non legge più alunni). 4.7: +1 no-già (senza-firma-app), +2 sì (anno_cruscotto, anno_quota_piu_voci)
     )
   })
 

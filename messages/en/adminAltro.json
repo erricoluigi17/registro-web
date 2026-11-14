@@ -843,5 +843,10 @@
   "ricevutiSpostaAnnoFatto": "Application moved to {anno}. Choose the classes again.",
   "ricevutiSpostaAnnoGiaEsaminata": "The application has already been reviewed: the year did not change.",
   "ricevutiSpostaAnnoNonOfferto": "The location no longer accepts applications for that year. Check the location calendar.",
-  "ricevutiSpostaAnnoErrore": "Could not move the application. Try again shortly."
+  "ricevutiSpostaAnnoErrore": "Could not move the application. Try again shortly.",
+  "ricevutiRettaMensileObbligatoria": "Monthly fee (€) *",
+  "ricevutiRettaPlaceholderListino": "empty = price list fee",
+  "ricevutiErroreClasseMancante": "Choose this child’s class.",
+  "ricevutiErroreRettaMancante": "Enter the monthly fee, or pick the sibling who pays it.",
+  "ricevutiImportNonRiuscito": "Import not done: the application stays pending."
 }

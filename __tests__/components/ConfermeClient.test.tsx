@@ -63,6 +63,7 @@ const s = {
   confermato: true,
   rifiutaModulo: false,
   elencoVuotoDopoSpunta: false,
+  letturaElencoCade: false, // la rilettura dell'elenco risponde 503 (la rete cade dopo un incasso)
   spuntato: false,
   confermata: false,
   quota: 'da_pagare' as 'da_pagare' | 'assente' | 'saldata', // la quota che il server legge per la riga
@@ -138,6 +139,7 @@ function risposta(url: string, metodo: string, body: Record<string, unknown>): R
     const q = new URL(url, 'http://localhost').searchParams
     const vista = q.get('vista')
     const filtro = q.get('conferma')
+    if (s.letturaElencoCade && url.includes('/conferme?')) return { status: 503, body: { error: 'non disponibile' } }
     if (vista === 'nuove' && s.nuoveVuote) return ok({ righe: [], pagina: 1, limite: 100, totale: 0, posti: [] })
     if (vista === 'nuove') return ok({ righe: [rigaNuova()], pagina: 1, limite: 100, totale: 1, posti: [] })
     // il filtro «non hanno risposto» dopo la conferma non ha più nessuno; «mancano moduli» dopo l'ultima spunta nemmeno
@@ -184,6 +186,7 @@ beforeEach(() => {
   s.quotaRitiro = 'tolta'
   s.rifiutaModulo = false
   s.elencoVuotoDopoSpunta = false
+  s.letturaElencoCade = false
   s.nonRinnovaMotivo = undefined
   s.nuoveVuote = false
   s.incassoRitardo = null
@@ -350,7 +353,7 @@ describe('ConfermeClient — il pannello dei moduli e la spunta', () => {
     await montaConPannelloAperto()
     const riga = rigaDi('NomeProva CognomeProva')
     expect(within(riga).getByText('1/2')).toBeInTheDocument()
-    expect(within(riga).getByText('In attesa: mancano 1 modulo e la quota')).toBeInTheDocument()
+    expect(within(riga).getByText('In attesa: mancano 1 documento e la quota')).toBeInTheDocument()
     expect(within(riga).getByText(itConferme.quotaDaPagare)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('checkbox', { name: /Delega al ritiro/ }))
@@ -376,7 +379,7 @@ describe('ConfermeClient — il pannello dei moduli e la spunta', () => {
     await montaConPannelloAperto()
     fireEvent.click(screen.getByRole('checkbox', { name: /Delega al ritiro/ }))
     await waitFor(() => expect(within(rigaDi('NomeProva CognomeProva')).getByText('1/2')).toBeInTheDocument())
-    expect(within(rigaDi('NomeProva CognomeProva')).getByText('In attesa: mancano 1 modulo e la quota')).toBeInTheDocument()
+    expect(within(rigaDi('NomeProva CognomeProva')).getByText('In attesa: mancano 1 documento e la quota')).toBeInTheDocument()
     expect(JSON.parse(fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT')![1].body)).toEqual({ modulo_id: M2, spuntato: false })
   })
 
@@ -401,7 +404,7 @@ describe('ConfermeClient — il pannello dei moduli e la spunta', () => {
 
   it('su un telefono: il pannello non è più largo della finestra e le caselle sono da toccare con un dito', async () => {
     await montaConPannelloAperto()
-    const pannello = screen.getByRole('list', { name: /Moduli richiesti per NomeProva CognomeProva/ }).parentElement as HTMLElement
+    const pannello = screen.getByRole('list', { name: /Documenti richiesti per NomeProva CognomeProva/ }).parentElement as HTMLElement
     expect(pannello.className).toMatch(/sticky/)
     expect(pannello.className).toMatch(/100vw/)
     const etichetta = screen.getByRole('checkbox', { name: /Delega al ritiro/ }).closest('label') as HTMLElement
@@ -854,7 +857,7 @@ describe('ConfermeClient — i riscontri sulla riga', () => {
   it('«In attesa» dice di cosa: moduli e quota mancanti', async () => {
     render(<ConfermeClient />) // 1 modulo su 2, quota da pagare
     await screen.findByText('NomeProva CognomeProva')
-    expect(within(rigaDi('NomeProva CognomeProva')).getByText('In attesa: mancano 1 modulo e la quota')).toBeInTheDocument()
+    expect(within(rigaDi('NomeProva CognomeProva')).getByText('In attesa: mancano 1 documento e la quota')).toBeInTheDocument()
   })
 
   it('«In attesa» con i moduli a posto dice solo che manca la quota', async () => {
@@ -940,5 +943,133 @@ describe('ConfermeClient — la voce da incassare non si legge o non c’è', ()
     await screen.findByText('NomeProva CognomeProva')
     expect(screen.queryByRole('button', { name: itConferme.azioneIncassa })).toBeNull()
     expect(within(rigaDi('NomeProva CognomeProva')).getByText(itConferme.incassaVoceMancante)).toBeInTheDocument()
+  })
+})
+
+// =============================================================================
+// LOTTO E4 · prova di facilità d'uso (agente 2, giro 2): tre punti in cui una segretaria nuova si perdeva nelle Conferme.
+// =============================================================================
+
+describe('ConfermeClient · E4 · le parole che spiegano', () => {
+  it('«Va alla primaria» dice cosa cambia: la classe di primaria da scegliere, la quota e la retta del listino della primaria', async () => {
+    s.confermato = false
+    s.gradoPartenza = 'infanzia'
+    render(<ConfermeClient />)
+    await screen.findByText('NomeProva CognomeProva')
+    const aiuto = screen.getByText(itConferme.vaAllaPrimariaAiuto).textContent ?? ''
+    expect(aiuto).toMatch(/classe di primaria/i)
+    expect(aiuto).toMatch(/quota/i)
+    expect(aiuto).toMatch(/retta/i)
+    expect(aiuto).toMatch(/listino della primaria/i)
+  })
+
+  it('per chi resta, una frase dice cosa vuol dire «Conferma»: resta a scuola, la classe si sceglie nel passaggio', async () => {
+    s.confermato = false
+    s.gradoPartenza = 'primaria' // anche un bambino di primaria ha «Conferma»: la frase c'è anche per lui
+    render(<ConfermeClient />)
+    await screen.findByText('NomeProva CognomeProva')
+    const riga = rigaDi('NomeProva CognomeProva')
+    const frase = within(riga).getByText(itConferme.confermaSpiega)
+    expect(frase.textContent).toMatch(/resta a scuola/i)
+    expect(frase.textContent).toMatch(/Passaggio d’anno/)
+    // sta nella cella delle azioni, vicino al pulsante
+    expect(frase.closest('td')).toBe(within(riga).getByRole('button', { name: itConferme.azioneConferma }).closest('td'))
+  })
+
+  it('spuntata «Va alla primaria» la frase cambia: «Conferma» iscrive alla primaria nella classe scelta', async () => {
+    s.confermato = false
+    s.gradoPartenza = 'infanzia'
+    render(<ConfermeClient />)
+    await screen.findByText('NomeProva CognomeProva')
+    fireEvent.click(screen.getByRole('checkbox', { name: itConferme.vaAllaPrimaria }))
+    expect(screen.queryByText(itConferme.confermaSpiega)).toBeNull()
+    expect(screen.getByText(itConferme.confermaSpiegaPrimaria)).toBeInTheDocument()
+  })
+
+  it('una riga già confermata non ripete la frase', async () => {
+    render(<ConfermeClient />) // s.confermato = true
+    await screen.findByText('NomeProva CognomeProva')
+    expect(screen.queryByText(itConferme.confermaSpiega)).toBeNull()
+  })
+
+  it('il pulsante dei documenti da consegnare si chiama «Documenti», non «Moduli»', async () => {
+    render(<ConfermeClient />)
+    const nome = await screen.findByText('NomeProva CognomeProva')
+    expect(within(nome.closest('tr') as HTMLElement).getByRole('button', { name: 'Documenti' })).toBeInTheDocument()
+    expect(within(nome.closest('tr') as HTMLElement).queryByRole('button', { name: 'Moduli' })).toBeNull()
+    expect(itConferme.colModuli).toBe('Documenti')
+    expect(itConferme.filtroManca).toBe('Mancano documenti')
+  })
+})
+
+describe('ConfermeClient · E4 · l’incasso dalla riga', () => {
+  const apriIncasso = async () => {
+    s.spunteConferma = [M1, M2]
+    render(<ConfermeClient />)
+    await screen.findByText('NomeProva CognomeProva')
+    fireEvent.click(within(rigaDi('NomeProva CognomeProva')).getByRole('button', { name: itConferme.azioneIncassa }))
+    return await screen.findByRole('dialog')
+  }
+  // Con la finestra aperta il nome compare due volte (riga e finestra): la riga è quella dentro la tabella, e può non esserci più.
+  const rigaViva = (): HTMLElement | null =>
+    (screen.queryAllByText('NomeProva CognomeProva').map((e) => e.closest('tr')).find((tr) => tr !== null) as HTMLElement | undefined) ?? null
+  const valore = (finestra: HTMLElement, etichetta: string) => (within(finestra).getByText(new RegExp(`^${etichetta}`)).textContent ?? '')
+
+  it('dopo il pagamento la finestra dice subito «Già incassato € 100,00» e «Resta € 0,00»', async () => {
+    const finestra = await apriIncasso()
+    expect(valore(finestra, 'Già incassato')).toMatch(/€\s?0,00/)
+    expect(valore(finestra, 'Resta')).toMatch(/€\s?100,00/)
+    fireEvent.click(within(finestra).getByRole('button', { name: /Registra € 100,00/ }))
+    await within(finestra).findByText('Pagamento saldato')
+    expect(valore(finestra, 'Già incassato')).toMatch(/€\s?100,00/)
+    expect(valore(finestra, 'Resta')).toMatch(/€\s?0,00/)
+  })
+
+  it('la riga si aggiorna SENZA chiudere la finestra e senza ricaricare la pagina', async () => {
+    const finestra = await apriIncasso()
+    fireEvent.click(within(finestra).getByRole('button', { name: /Registra € 100,00/ }))
+    await within(finestra).findByText('Pagamento saldato')
+    // la finestra è ancora aperta, e la riga dietro dice già «Saldata» e «Iscritto»
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    await waitFor(() => expect(within(rigaViva()!).getByText(itConferme.quotaSaldata)).toBeInTheDocument())
+    expect(within(rigaViva()!).getByText(itConferme.statoIscritto)).toBeInTheDocument()
+    expect(within(rigaViva()!).queryByRole('button', { name: itConferme.azioneIncassa })).toBeNull()
+  })
+
+  it('la finestra non sparisce se la riga esce dall’elenco filtrato mentre si paga', async () => {
+    q.query = 'conferma=mancano_moduli'
+    s.spunteConferma = [M1]
+    render(<ConfermeClient />)
+    await screen.findByText('NomeProva CognomeProva')
+    fireEvent.click(within(rigaDi('NomeProva CognomeProva')).getByRole('button', { name: itConferme.azioneIncassa }))
+    const finestra = await screen.findByRole('dialog')
+    s.elencoVuotoDopoSpunta = true // dopo l'incasso la rilettura non ha più la riga
+    fireEvent.click(within(finestra).getByRole('button', { name: /Registra € 100,00/ }))
+    await within(finestra).findByText('Pagamento saldato')
+    await waitFor(() => expect(rigaViva()).toBeNull())
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(valore(screen.getByRole('dialog'), 'Resta')).toMatch(/€\s?0,00/)
+  })
+
+  it('se la rilettura dopo l\'incasso cade, la finestra «Pagamento saldato» resta e l\'elenco di prima non sparisce', async () => {
+    const finestra = await apriIncasso()
+    s.letturaElencoCade = true // il pagamento è registrato, ma l'elenco non si rilegge
+    fireEvent.click(within(finestra).getByRole('button', { name: /Registra € 100,00/ }))
+    await within(finestra).findByText('Pagamento saldato')
+    const avviso = await screen.findByRole('alert', { hidden: true })
+    expect(avviso).toHaveTextContent('non disponibile')
+    expect(within(avviso).getByRole('button', { name: itConferme.riprova, hidden: true })).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(within(screen.getByRole('dialog')).getByText('Pagamento saldato')).toBeInTheDocument()
+    expect(rigaViva()).not.toBeNull()
+  })
+
+  it('«Invia fattura» non è accanto alla conferma del pagamento: sta in un punto separato, dopo «Chiudi»', async () => {
+    const finestra = await apriIncasso()
+    fireEvent.click(within(finestra).getByRole('button', { name: /Registra € 100,00/ }))
+    const conferma = await within(finestra).findByRole('status')
+    expect(conferma.textContent).toContain('Pagamento saldato')
+    expect(within(conferma).queryByRole('button')).toBeNull()
+    expect(within(finestra).getByText(/si può fare anche più tardi/i)).toBeInTheDocument()
   })
 })

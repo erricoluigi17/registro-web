@@ -1,3 +1,36 @@
+## 🧭 Changelog — Anno scolastico, seconde semplificazioni dopo il secondo giro della segretaria inesperta (agente 2) — 2026-11-14 (ramo `feat/anno-semplificazioni-2`)
+
+**Perché.** Il secondo giro con la segretaria inesperta ha mostrato altri punti dove ci si ferma. Cinque lotti (E1-E5) li hanno semplificati, più una correzione trovata dopo l'unione dei rami.
+
+- **E1 — Importazione nelle anagrafiche.** Il clic su «Importa» sembrava morto. Per una domanda dell'anno prossimo il server rispondeva `400 RETTA_MANCANTE`, e la pagina lo mostrava solo con un `alert()` del browser: invisibile nella WebView e a chi collauda. Ora ogni rifiuto compare nella pagina, in un avviso `role="alert"` e sotto il campo. Il controllo parte prima dell'invio. Per l'anno prossimo la retta può restare vuota: vale il listino. Ogni rifiuto scrive un log `warn` (`import-rifiutato`) con il codice e l'uuid, senza dati personali. Route: `src/app/api/admin/iscrizioni/route.ts`.
+- **E2 — Home Direzione.** Nuova scheda «Prepara l'anno prossimo» con le sei tappe (quote, documenti, iscrizioni, conferme, a che punto siamo, passaggio), ognuna con stato e link. Con più sedi attive chiede di sceglierne una. Il pulsante «Iscrizioni» si chiama «Domande ricevute», perché porta alle domande arrivate. Il nome della sede è sempre in barra, su desktop e telefono, in sola lettura quando la sede è una sola.
+- **E3 — Impostazioni, Anno scolastico.** Si apre per primo l'anno in preparazione o con le iscrizioni aperte («Stai preparando il 2027/28»). L'anno in corso resta nell'elenco con un titolo diverso. «Moduli» diventa «Documenti da consegnare». La fascia è spiegata, e senza classi con fascia la scelta sparisce e si dice che vale per tutti. Una retta è una cosa sola: la riga con «Modifica» oppure il modulo, mai i due insieme. Il modulo pubblico scrive «Domanda di iscrizione - scuola - anno»: il nome viene da `/api/iscrizione/anni` (campo `scuola_nome`, già pubblico nell'elenco delle sedi).
+- **E4 — Conferme, incasso, cruscotto, passaggio.** Conferme: spiegato «Va alla primaria» (classe, quota e retta del listino della primaria) e che cosa vuol dire «Conferma»; «Moduli» diventa «Documenti». Incasso: la finestra mostra subito «Già incassato» e «Resta» giusti, la riga si aggiorna subito, «Invia fattura» sta in un punto separato dopo «Chiudi». Cruscotto: «Per classe» è una tabella (classe, in lista, iscritti) e c'è «Documenti che mancano». Passaggio: il motivo del pulsante grigio sta sotto il pulsante, con la data del programma, e una frase dice che il nome della classe non cambia, con rimando alle Sezioni.
+- **E5 — Demo, genitori di prova.** Nuova migrazione `20261114195853_demo_ripristina_genitori_di_prova.sql` (la applica l'integrazione al merge, non a mano). `demo_ripristina` e `demo_controllo` tolgono anche genitore, utente e utente di accesso nati con una prova. Un genitore si toglie solo se valgono tutte e quattro: (1) la riga `parents` è nata dopo la partenza; (2) dopo l'azzeramento non ha più legami con alunni, letti dalle chiavi esterne vere; (3) il suo utente ha ruolo `genitore`, è nato dopo la partenza e ha solo sedi `e2e00000…`; (4) l'email di accesso finisce in `.test`. Chi non le rispetta resta e compare in `lasciate`. Test PGlite per ogni criterio.
+- **Correzione `withUser`.** La funzione del cockpit (`src/lib/context/admin-identity.tsx`) aggiungeva sempre `?userId=`, anche a un indirizzo con una query già presente (`...?sezione=mensa?userId=...`). Ora usa `&` quando serve e mette il parametro prima di un eventuale `#frammento` (funzione `aggiungiUserId`, test `admin-identity-with-user`).
+- **Revisione indipendente, rilievi corretti.** Due revisori, uno per le pagine (E1-E4) e uno per la migrazione (E5): nessun critico né importante.
+  - **Pagine** (7 minori, 5 corretti):
+    - Sotto i 1024 px il nome della sede non si monta più nella barra, per non togliere spazio alla ricerca su tablet in verticale; sul telefono resta.
+    - Un corpo illeggibile dopo «Importa» mostra «Import fallito» e non più «importata». La scheda «Prepara l'anno prossimo» logga `warn` quando non riesce a leggere una risposta.
+    - Se la rilettura delle Conferme cade dopo un incasso, l'elenco resta con un avviso e «Riprova», e la finestra «Pagamento saldato» non sparisce.
+    - «Aggiungi la retta di una fascia» è nascosto quando non resta nessuna fascia libera, così non riscrive in silenzio la retta valida per tutti.
+    - Negli anni in chiusura o chiusi ogni retta mostra di nuovo i suoi mesi (`retteMesiElenco`).
+  - **Migrazione E5** (5 minori, poi 3 della seconda revisione):
+    - Senza la riga `utenti` il genitore non si tocca e resta fra le «lasciate».
+    - Un genitore nuovo senza nessun segnale di Demo (legame con alunni di prova, email `.test`, sede `e2e00000`) non si tocca e non si elenca.
+    - La cancellazione è per singolo genitore, in un sotto-blocco che intercetta solo `foreign_key_violation`: chi non si può togliere resta, con il nome del vincolo come motivo, e il ripristino prosegue. Una chiave differita non diretta fa invece fallire tutto senza scrivere niente: è un limite documentato nella guida della Demo.
+    - I test coprono `.TEST` maiuscolo, l'utente assente, il figlio a cascata e l'assenza di nomi ed email nel resoconto.
+  - **Il gate** ha trovato due controlli rossi nati dai lotti, corretti: il codice `CLASSE_MANCANTE` non era dichiarato (`errori-con-codice`) e due testi inglesi dicevano «school» invece di «location» (`glossario-sede`).
+
+**Non fatto / da decidere.**
+- Retta nella finestra del passaggio: nei giorni fra l'ultimo giorno aperto e l'inizio del nuovo anno la pagina può chiedere una retta che il server non pretende. È il lato sicuro: il client non accetta mai più del server. Per allinearli servirebbe un campo nuovo nella route delle domande.
+- I link della scheda «Prepara l'anno prossimo» scelgono l'anno al clic; aperti in una nuova scheda partono dall'anno in corso, perché Conferme, «A che punto siamo» e Passaggio non leggono l'anno dall'indirizzo.
+- Comune e Indirizzo non sono stati resi obbligatori nel modulo pubblico: l'E2E `e2e/public-iscrizione.spec.ts` non li compila, e in produzione l'obbligo lo decide `form_models` nel database.
+- Posti per classe nel cruscotto: la route li dà per fascia, non per classe.
+- La causa del «primo clic a vuoto» sul pulsante della home non è stata trovata.
+
+---
+
 ## 🧭 Changelog — Anno scolastico, semplificazioni dopo la prova con una segretaria inesperta (agente 2, primo giro) — 2026-11-14 (ramo `feat/anno-collaudo-giro-agente2`)
 
 **Perché.** Il primo giro dell'agente 2 ha preparato il 2027/28 da solo senza conoscere l'app. Esito: ACCETTABILE, non un ok. Due passaggi non li ha superati da solo: la quota pagata (4/5) e il bambino nuovo (5/5). Quattro sessioni parallele (A, B, C, D) hanno semplificato i punti dove si è fermato. Ognuna è passata da una revisione indipendente, e i rilievi sono stati corretti tutti (vedi sotto). Il giro ha avuto anche un incidente: il modulo pubblico non offre la Demo, quindi l'agente ha scelto una sede vera e lì ha inviato una domanda finta, con 3 notifiche e 7 PDF finti. Le righe le ha cancellate il titolare, i 7 file li ha tolti l'assistente dalla dashboard di Storage, una per nome esatto. Verifica finale: 0 PDF finti, 2.521 documenti veri intatti.

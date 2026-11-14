@@ -111,7 +111,10 @@ export function AnnoScolasticoSettings({ userId, scuolaId, annoSedeIdIniziale = 
   const testoStato = useTestoStatoAnno();
   const calendario = useCalendarioDi(scuolaId);
   const { loading, errore, ricarica } = useCalendario();
-  // L'anno su cui si apre la sezione: quello scelto nel selettore, se questa sede lo ha; poi l'anno attivo.
+  // L'anno su cui si apre la sezione: quello da cui si arriva con un rimando; poi quello scelto nel selettore, se questa sede lo
+  // ha E non è l'anno in corso (che è il valore di partenza del selettore: non è una scelta); poi l'anno che si PREPARA (in
+  // preparazione o con le iscrizioni aperte); infine l'anno attivo. Aprire per primo l'anno in corso faceva modificare l'anno
+  // sbagliato (prova con una segretaria inesperta, 14/11/2026).
   // `scelto` è solo la scelta fatta DOPO, dall'elenco qui sotto (derivato, nessun effetto che copia stato).
   const annoDelSelettore = useAnnoOpzionale()?.selezionato ?? null;
   const [scelto, setScelto] = useState<string | null>(null);
@@ -143,9 +146,14 @@ export function AnnoScolasticoSettings({ userId, scuolaId, annoSedeIdIniziale = 
   // Chi arriva da un rimando (es. «Imposta le rette dell'anno» dall'anteprima di un anno futuro) apre QUELL'anno: senza, un Salva
   // cambierebbe la retta di un altro. Una scelta fatta dall'elenco batte il rimando.
   const delRimando = annoSedeIdIniziale ? righe.find((r) => r.annoSedeId === annoSedeIdIniziale) : undefined;
-  const riga =
-    righe.find((r) => r.annoId === scelto) ?? delRimando ?? righe.find((r) => r.annoId === annoDelSelettore) ?? annoAttivoDelCalendario(calendario) ?? righe[0];
+  const attivo = annoAttivoDelCalendario(calendario);
+  const sceltaDelSelettore = righe.find((r) => r.annoId === annoDelSelettore && r.annoId !== attivo?.annoId);
+  // Quello che si prepara è il più vicino (con due anni da preparare, prima l'anno prossimo).
+  const inPreparazione = [...righe].reverse().find((r) => r.stato === 'in_preparazione' || r.stato === 'iscrizioni_aperte');
+  const riga = righe.find((r) => r.annoId === scelto) ?? delRimando ?? sceltaDelSelettore ?? inPreparazione ?? attivo ?? righe[0];
   const successivo = calendario.find((r) => r.annoInizio === riga.annoInizio + 1) ?? null;
+  // Con un anno da preparare, chi guarda l'anno in corso (o un altro) è invitato a scegliere quello giusto.
+  const daPreparare = inPreparazione && inPreparazione.annoSedeId !== riga.annoSedeId ? inPreparazione : null;
 
   return (
     <section className={card}>
@@ -182,6 +190,7 @@ export function AnnoScolasticoSettings({ userId, scuolaId, annoSedeIdIniziale = 
         scuolaId={scuolaId}
         riga={riga}
         successivo={successivo}
+        daPreparare={daPreparare}
         occupato={loading}
         onModificato={ricarica}
       />
@@ -198,6 +207,7 @@ function DettaglioAnno({
   scuolaId,
   riga,
   successivo,
+  daPreparare,
   occupato,
   onModificato,
 }: {
@@ -205,6 +215,8 @@ function DettaglioAnno({
   scuolaId: string;
   riga: RigaCalendario;
   successivo: RigaCalendario | null;
+  /** L'anno che si sta preparando, quando NON è quello aperto: serve a invitare a sceglierlo. */
+  daPreparare: RigaCalendario | null;
   /** Il calendario si sta rileggendo dopo un salvataggio. */
   occupato: boolean;
   onModificato: () => void;
@@ -422,13 +434,28 @@ function DettaglioAnno({
   const puoAprire = mancano !== null && mancano.length === 0;
   const idStato = `${id}-iscrizioni-stato`;
   const titoloDialogo = t('annoApriTitolo', { anno: etichettaAnno(riga.annoInizio, 'breve') });
+  // Il titolo dice a che punto è l'anno che si ha davanti: «Stai preparando il 2027/28», «Anno in corso: 2026/27»…
+  const chiaveTitolo =
+    statoVero === 'in_preparazione' || statoVero === 'iscrizioni_aperte'
+      ? 'annoTitoloPreparazione'
+      : statoVero === 'in_chiusura'
+        ? 'annoTitoloInChiusura'
+        : statoVero === 'chiuso'
+          ? 'annoTitoloChiuso'
+          : 'annoTitoloInCorso';
+  const titoloAnno = t(chiaveTitolo, { anno: etichettaAnno(riga.annoInizio, 'breve') });
 
   return (
     <div>
       <h4 className="font-barlow text-base font-black text-kidville-green">
-        {t('annoDettaglioTitolo', { anno: etichettaAnno(riga.annoInizio, 'breve') })}{' '}
+        {titoloAnno}{' '}
         <span className="font-maven text-sm font-normal text-kidville-sub">({testoStato(riga.stato)})</span>
       </h4>
+      {daPreparare && (
+        <p className="mt-1 font-maven text-sm text-kidville-sub">
+          {t('annoInvitoPreparare', { anno: etichettaAnno(daPreparare.annoInizio, 'breve') })}
+        </p>
+      )}
 
       {chiuso ? (
         <>

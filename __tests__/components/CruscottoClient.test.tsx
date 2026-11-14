@@ -134,16 +134,44 @@ describe('CruscottoClient — i numeri', () => {
   it('per classe: in lista e, di questi, iscritti a tutti gli effetti; classi vuote a 0; senza classe in una riga a parte', async () => {
     render(<CruscottoClient />)
     await screen.findByRole('heading', { name: itCruscotto.sezioniTitolo })
-    const riga = (nome: string) => screen.getByText(nome).closest('li') as HTMLElement
-    expect(riga('Sezione Prova A').textContent).toMatch(/12 bambini in lista/)
-    expect(riga('Sezione Prova A').textContent).toMatch(/5 iscritti a tutti gli effetti/)
-    expect(riga('Sezione Prova B').textContent).toMatch(/0 bambini in lista/)
-    expect(riga('Sezione Prova B').textContent).toMatch(/0 iscritti a tutti gli effetti/)
-    expect(riga(itCruscotto.sezioneSenza).textContent).toMatch(/2 bambini in lista/)
+    const celle = (nome: string) => within(screen.getByText(nome).closest('tr') as HTMLElement).getAllByRole('cell').map((c) => c.textContent)
+    expect(celle('Sezione Prova A')).toEqual(['Sezione Prova A', '12', '5'])
+    expect(celle('Sezione Prova B')).toEqual(['Sezione Prova B', '0', '0'])
+    expect(celle(itCruscotto.sezioneSenza)).toEqual([itCruscotto.sezioneSenza, '2', '0'])
     // la legenda dice cosa vuol dire «in lista» e cosa «iscritto»
     expect(screen.getByText(itCruscotto.sezioniLegenda)).toBeInTheDocument()
-    // l'etichetta bugiarda non c'è più: nessuna riga di classe dice «12 iscritti» e basta
-    expect(riga('Sezione Prova A').textContent).not.toMatch(/12 iscritti/)
+    // l'etichetta bugiarda non c'è più: «12» sta nella colonna «In lista», mai in quella degli iscritti
+    expect(celle('Sezione Prova A')[2]).not.toBe('12')
+  })
+
+  // Prova di facilità d'uso (agente 2, giro 2): «Per classe» aveva nomi e numeri su due colonne mescolate. Ora è una tabella: una riga
+  // per classe, il nome a sinistra e i numeri allineati in colonne con la loro intestazione; sta bene anche a 375 px.
+  it('E4 · «Per classe» è una tabella: intestazioni «Classe / In lista / Iscritti», una riga per classe, numeri allineati a destra', async () => {
+    render(<CruscottoClient />)
+    await screen.findByRole('heading', { name: itCruscotto.sezioniTitolo })
+    const tabella = screen.getByRole('table', { name: itCruscotto.sezioniTitolo })
+    expect(within(tabella).getAllByRole('columnheader').map((c) => c.textContent)).toEqual([itCruscotto.colClasse, itCruscotto.colInLista, itCruscotto.colIscritti])
+    // una riga di corpo per classe (2 sezioni + «senza classe») più l'intestazione
+    expect(within(tabella).getAllByRole('row')).toHaveLength(1 + CRUSCOTTO.sezioni.length)
+    const numeri = within(screen.getByText('Sezione Prova A').closest('tr') as HTMLElement).getAllByRole('cell').slice(1)
+    for (const c of numeri) expect(c.className).toMatch(/\btext-right\b/)
+    expect(numeri[0].className).toMatch(/\btabular-nums\b/)
+  })
+
+  it('E4 · a 375 px la tabella non esce dallo schermo: nessuna larghezza minima, il nome va a capo', async () => {
+    render(<CruscottoClient />)
+    await screen.findByRole('heading', { name: itCruscotto.sezioniTitolo })
+    const tabella = screen.getByRole('table', { name: itCruscotto.sezioniTitolo })
+    expect(tabella.className).toMatch(/\bw-full\b/)
+    expect(tabella.className).not.toMatch(/min-w-\[/)
+    expect(screen.getByText('Sezione Prova A').className).toMatch(/\bbreak-words\b/)
+  })
+
+  it('E4 · il blocco dei documenti da consegnare si chiama «Documenti che mancano», non «Moduli che mancano»', async () => {
+    render(<CruscottoClient />)
+    expect(await screen.findByRole('heading', { name: 'Documenti che mancano' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Moduli che mancano' })).toBeNull()
+    expect(itCruscotto.moduliTitolo).toBe('Documenti che mancano')
   })
 
   it('gli importi sono in euro con la lingua della pagina; la stima è dichiarata tale e non si somma agli incassi', async () => {

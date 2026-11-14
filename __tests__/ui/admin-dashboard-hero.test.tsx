@@ -21,6 +21,10 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
 }));
 
+// La scheda «Prepara l'anno prossimo» ha i suoi test (`prepara-anno-prossimo-*.test.tsx`): qui, dove si
+// guarda altro, serve il provider delle sedi che la pagina vera ha dal layout.
+vi.mock('@/components/features/admin/home/PreparaAnnoProssimo', () => ({ PreparaAnnoProssimo: () => null }));
+
 import AdminDashboardPage from '@/app/(dashboard)/admin/page';
 
 describe('Dashboard admin — hero + heading di sezione (re-skin W1)', () => {

@@ -654,6 +654,34 @@ function SedeRow({ active, nome, meta, onClick }: { active: boolean; nome: strin
 }
 
 /**
+ * Il NOME della sede, in sola lettura, per chi ne ha UNA sola.
+ *
+ * `SedeSelector` con una sede sola non si monta (non c'è niente da scegliere), e la barra restava senza
+ * scritto su quale scuola si sta lavorando: la prova di usabilità con una segretaria nuova (2026-11) l'ha
+ * trovato con «STAFF – Kidville» e l'anno e nient'altro. Con due o più sedi il nome lo dice già il
+ * selettore, quindi qui non si monta. Non è un pulsante e non ha chevron: non promette una scelta.
+ * `compatto` per la barra del telefono: una riga, al più il 40% della larghezza, il resto a puntini.
+ */
+export function SedeNome({ compatto = false }: { compatto?: boolean }) {
+  const tn = useTranslations('adminNav');
+  const { sedi } = useSediAttive();
+  if (sedi.length !== 1) return null;
+  return (
+    <span
+      data-kv-sede-nome
+      className={cx(
+        'flex min-w-0 items-center rounded-[12px] bg-kidville-white/[0.12] text-kidville-white',
+        compatto ? 'min-h-[36px] max-w-[40vw] gap-1.5 px-2.5 py-1.5' : 'max-w-[220px] gap-2.5 px-3 py-[7px]',
+      )}
+    >
+      <span className="sr-only">{tn('sedeUnicaAria')}: </span>
+      <span className="flex shrink-0 text-kidville-yellow"><SedeIcon /></span>
+      <span className={cx('min-w-0 truncate font-barlow font-extrabold uppercase', compatto ? 'text-[12.5px]' : 'text-sm')}>{sedi[0].nome}</span>
+    </span>
+  );
+}
+
+/**
  * Selettore dell'ANNO SCOLASTICO (PR 4.2), accanto a `SedeSelector`. Stesso scheletro e stessa a11y:
  * le righe sono `<button aria-pressed>` in un `group` (non un menu ARIA: niente frecce), Escape chiude e
  * riporta il focus al trigger, lo stato di ogni anno è in PAROLE (non solo colore).
