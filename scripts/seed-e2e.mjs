@@ -27,6 +27,7 @@ import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { requireE2EPassword } from '../e2e/lib/e2e-password.mjs';
 import { pianoGiorniSeedE2E } from './lib/seed-e2e-giornate.mjs';
+import { residuiGalleriaE2E } from './lib/galleria-residui-e2e.mjs';
 
 // ── Env: process.env (CI) con fallback a .env.local (dev locale) ────────────
 function loadEnvLocal() {
@@ -1090,6 +1091,33 @@ function aBlocchi(elenco, dimensione) {
   return blocchi;
 }
 
+/**
+ * Le foto che gli spec hanno lasciato nella galleria E2E (una DELETE di pulizia fallita, un test morto prima del
+ * `finally`) si tolgono PRIMA di seminare: sono più recenti delle righe del seed e spingono il video di
+ * `impaginazione-media` fuori dalla prima pagina del genitore. Il criterio, stretto, sta in
+ * `scripts/lib/galleria-residui-e2e.mjs` (provato da vitest). Non usa `must()`: un errore si dice e non ferma il seed.
+ */
+async function ripulisciGalleriaE2E() {
+  const idSeminati = Object.entries(IDS).filter(([k]) => k.startsWith('MEDIA_')).map(([, v]) => v);
+  const perimetro = { idSeminati, docentiE2E: [IDS.DOCENTE, IDS.DOCENTE2], sediE2E: [IDS.SCUOLA, IDS.SCUOLA2] };
+  const letti = await db.from('galleria_media_v2').select('*').in('uploaded_by', perimetro.docentiE2E);
+  if (letti.error) {
+    console.warn(`↷ reset galleria E2E saltato: ${letti.error.code ?? ''} ${letti.error.message ?? ''}`);
+    return;
+  }
+  const { ids, percorsi } = residuiGalleriaE2E(letti.data ?? [], perimetro);
+  if (ids.length === 0) return;
+  for (const blocco of aBlocchi(ids, ID_PER_BLOCCO)) {
+    const { error } = await db.from('galleria_media_v2').delete().in('id', blocco);
+    if (error) console.warn(`↷ reset galleria E2E (righe): ${error.code ?? ''} ${error.message ?? ''}`);
+  }
+  for (const blocco of aBlocchi(percorsi, 100)) {
+    const { error } = await db.storage.from('gallery').remove(blocco);
+    if (error) console.warn(`↷ reset galleria E2E (file): ${error.message ?? ''}`);
+  }
+  console.log(`  🧹 galleria: ${ids.length} foto residue degli spec tolte (${percorsi.length} file)`);
+}
+
 async function ripulisciVideoE2E() {
   const assente = (e) => /PGRST205|42P01|42703|does not exist|schema cache/i.test(
     `${e?.code ?? ''} ${e?.message ?? ''}`,
@@ -1446,6 +1474,8 @@ async function main() {
   // I video lasciati dai run precedenti (intenti, job, byte, la riga di galleria del video pubblicato):
   // vedi `ripulisciVideoE2E`. Non usa `must()` — la pipeline video può non esserci su questo database.
   await ripulisciVideoE2E();
+  // Le foto lasciate dagli spec della galleria (una run rossa non deve sporcare le successive): vedi `ripulisciGalleriaE2E`.
+  await ripulisciGalleriaE2E();
   // Le votazioni dei rappresentanti (classi, candidati e voti per CASCADE): vedi `ripulisciVotazioniE2E`.
   // Anche questa non usa `must()` — le tabelle possono non esserci su questo database.
   await ripulisciVotazioniE2E();
