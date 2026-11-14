@@ -123,8 +123,16 @@ function ultima(metodo: string): { url: string; body: Record<string, unknown>; h
   return u ? { url: String(u[0]), body: u[1]?.body ? JSON.parse(String(u[1].body)) : {}, headers: u[1]?.headers ?? {} } : null
 }
 
-function monta() {
-  return render(<AnnoScolasticoSettings userId={USER} scuolaId={SEDE_A} />)
+/**
+ * Dal lotto E3 la sezione si apre sull'anno che si PREPARA (se c'è), non sull'anno in corso: i test che provano l'anno in corso
+ * lo scelgono dall'elenco, come farebbe la segreteria (`aprendo`). Chi prova l'anno di partenza passa `null`.
+ * (L'apertura sull'anno giusto ha i suoi test in `AnnoScolasticoSettings-anno-giusto.test.tsx`.)
+ */
+function monta(aprendo: string | null = '2026/27') {
+  const resa = render(<AnnoScolasticoSettings userId={USER} scuolaId={SEDE_A} />)
+  // Senza calendario (caricamento, errore, database indietro) non c'è nessun elenco da cui scegliere.
+  if (aprendo && screen.queryByRole('list', { name: itSettings.annoElencoAria })) scegli(aprendo)
+  return resa
 }
 
 /** Sceglie un anno dall'elenco (il nome accessibile della riga comincia con l'etichetta breve). */
@@ -151,11 +159,11 @@ describe('Impostazioni → Anno scolastico: l’elenco', () => {
     expect(righe[2]).toHaveTextContent('chiuso')
   })
 
-  it('all’apertura è scelto l’anno in corso, e la riga lo dice con aria-pressed', async () => {
-    monta()
+  it('all’apertura è scelto l’anno che si prepara (non quello in corso), e la riga lo dice con aria-pressed', async () => {
+    monta(null)
     const elenco = await screen.findByRole('list', { name: itSettings.annoElencoAria })
-    expect(within(elenco).getByRole('button', { name: /^2026\/27/ })).toHaveAttribute('aria-pressed', 'true')
-    expect(within(elenco).getByRole('button', { name: /^2027\/28/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(within(elenco).getByRole('button', { name: /^2027\/28/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(elenco).getByRole('button', { name: /^2026\/27/ })).toHaveAttribute('aria-pressed', 'false')
   })
 })
 
@@ -167,26 +175,26 @@ describe('Impostazioni → Anno scolastico: parte dall’anno scelto nel seletto
 
   it('se il selettore è sul 2027/28 la sezione si apre sul 2027/28', async () => {
     h.anno = { selezionato: A27 }
-    monta()
+    monta(null)
     expect(await premuto('2027/28')).toHaveAttribute('aria-pressed', 'true')
     expect(await premuto('2026/27')).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('se l’anno scelto non esiste per questa sede si apre sull’anno in corso, come oggi', async () => {
+  it('se l’anno scelto non esiste per questa sede si apre sull’anno che si prepara', async () => {
     h.anno = { selezionato: '99999999-9999-4999-8999-999999999999' }
-    monta()
-    expect(await premuto('2026/27')).toHaveAttribute('aria-pressed', 'true')
+    monta(null)
+    expect(await premuto('2027/28')).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('senza una scelta (o fuori dal provider) si apre sull’anno in corso', async () => {
+  it('senza una scelta (o fuori dal provider) si apre sull’anno che si prepara', async () => {
     h.anno = { selezionato: null }
-    monta()
-    expect(await premuto('2026/27')).toHaveAttribute('aria-pressed', 'true')
+    monta(null)
+    expect(await premuto('2027/28')).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('è solo la scelta iniziale: si può aprire un altro anno dall’elenco', async () => {
     h.anno = { selezionato: A27 }
-    monta()
+    monta(null)
     await premuto('2027/28')
     scegli('2026/27')
     expect(await premuto('2026/27')).toHaveAttribute('aria-pressed', 'true')
@@ -361,12 +369,12 @@ describe('Impostazioni → Anno scolastico: aprire le iscrizioni', () => {
     monta()
     await screen.findByLabelText(itSettings.annoFineTitolo)
     scegli('2027/28')
-    expect(await screen.findByText(/^Mancano: quota di conferma, quota di nuova iscrizione, moduli per la conferma, moduli per la nuova iscrizione$/)).toBeInTheDocument()
+    expect(await screen.findByText(/^Mancano: quota di conferma, quota di nuova iscrizione, documenti per la conferma, documenti per la nuova iscrizione$/)).toBeInTheDocument()
     expect(screen.getByText(itSettings.annoListinoNelleRette)).toBeInTheDocument()
     // Le voci si inseriscono già dalle schede lì sopra: il testo non deve rimandare a un aggiornamento futuro.
     expect(itSettings.annoListinoNelleRette).not.toMatch(/prossimo aggiornamento|non si possono ancora/i)
     expect(screen.getByRole('button', { name: 'Quote' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Moduli' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Documenti' })).toBeInTheDocument()
     expect(apri()).toHaveAttribute('aria-disabled', 'true')
     expect(fetchMock).toHaveBeenCalledWith(`/api/admin/anni/${S27}`, expect.objectContaining({ headers: expect.objectContaining({ 'x-user-id': USER }) }))
     fireEvent.click(apri())
@@ -391,7 +399,7 @@ describe('Impostazioni → Anno scolastico: aprire le iscrizioni', () => {
     monta()
     await screen.findByLabelText(itSettings.annoFineTitolo)
     scegli('2027/28')
-    expect(await screen.findByText('Mancano: moduli per la nuova iscrizione')).toBeInTheDocument()
+    expect(await screen.findByText('Mancano: documenti per la nuova iscrizione')).toBeInTheDocument()
   })
 
   it('mentre controlla non si può aprire, e lo dice', async () => {
@@ -406,9 +414,8 @@ describe('Impostazioni → Anno scolastico: aprire le iscrizioni', () => {
       }
       return normale(url, init)
     })
-    monta()
+    monta(null)
     await screen.findByLabelText(itSettings.annoFineTitolo)
-    scegli('2027/28')
     expect(await screen.findByText(itSettings.annoMancanoControllo)).toBeInTheDocument()
     expect(apri()).toHaveAttribute('aria-disabled', 'true')
     sciogli({ ok: true, status: 200, json: async () => ({ success: true, data: { mancano: [] } }) })
@@ -488,7 +495,9 @@ describe('Impostazioni → Anno scolastico: aprire le iscrizioni', () => {
   })
 
   it('un anno in corso non ha il pulsante «Apri le iscrizioni»', async () => {
-    monta()
+    // Senza un anno da preparare la sezione si apre da sola sull'anno in corso: nessun'altra schermata monta prima.
+    h.perSede = { [SEDE_A]: [riga(2025, 'chiuso'), riga(2026, 'corrente')] }
+    monta(null)
     await screen.findByLabelText(itSettings.annoFineTitolo)
     expect(screen.queryByRole('button', { name: itSettings.annoIscrizioniTitolo })).toBeNull()
     // niente lettura di «che cosa manca» per aprire le iscrizioni; resta solo la scheda Rette dell'anno in corso (PR 4.6)
@@ -642,10 +651,10 @@ describe('Impostazioni → Anno scolastico: un anno chiuso è in sola lettura', 
     expect(screen.queryByLabelText(itSettings.annoFineTitolo)).toBeNull()
     expect(screen.queryByLabelText(itSettings.annoUltimoGiorno)).toBeNull()
     expect(screen.queryByRole('note')).toBeNull()
-    // Dell'anno chiuso resta la sola lettura delle rette: ogni campo e ogni pulsante di scrittura è spento.
+    // Dell'anno chiuso resta la sola lettura delle rette: nessun campo e nessun pulsante di scrittura (non c'è niente da scrivere).
     expect(await screen.findByText(itAnno.retteSolaLettura)).toBeInTheDocument()
-    for (const campo of document.querySelectorAll('input, select')) expect(campo).toBeDisabled()
-    expect(screen.getByRole('button', { name: itSettings.salva })).toBeDisabled()
+    expect(document.querySelectorAll('input, select')).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: itSettings.salva })).toBeNull()
   })
 })
 
@@ -771,6 +780,7 @@ describe('Impostazioni → Anno scolastico: scrittura in volo e pannello smontat
         <AnnoScolasticoSettings userId={USER} scuolaId={SEDE_A} />
       </StrictMode>,
     )
+    scegli('2026/27')
     await screen.findByLabelText(itSettings.annoFineTitolo)
     fireEvent.click(salvaDi(itSettings.annoFineTitolo))
     expect(await screen.findByText(itSettings.salvato)).toBeInTheDocument()

@@ -135,6 +135,7 @@ describe('scheda Rette', () => {
   })
 
   it('per una fascia i mesi non si scelgono e non si mandano', async () => {
+    lettura = { fasce: ['infanzia'] }
     const g = await apriRette()
     fireEvent.change(within(g).getByLabelText(itAnno.etichettaFascia), { target: { value: 'infanzia' } })
     expect(within(g).queryAllByRole('checkbox')).toHaveLength(0)
@@ -202,11 +203,11 @@ describe('scheda Rette negli anni in corso, in chiusura e chiusi', () => {
     monta(stato)
     const g = await screen.findByRole('group', { name: itAnno.retteTitolo })
     expect(screen.getByText(itAnno.retteSolaLettura)).toBeInTheDocument()
-    expect(within(g).getByText('180,00', { exact: false })).toBeInTheDocument()
-    expect(campoImporto(g)).toBeDisabled()
-    expect(within(g).getByRole('button', { name: itAnno.salva })).toBeDisabled()
-    expect(within(g).getByRole('button', { name: itAnno.togli })).toBeDisabled()
-    expect(within(g).getAllByRole('checkbox').every((c) => (c as HTMLInputElement).disabled)).toBe(true)
+    // La retta si legge come testo: nessun campo, nessun pulsante, nessuna casella (non c'è niente da scrivere).
+    expect(await within(g).findByText('180,00', { exact: false })).toBeInTheDocument()
+    expect(within(g).queryByLabelText(itAnno.etichettaImporto)).toBeNull()
+    expect(within(g).queryByRole('button')).toBeNull()
+    expect(within(g).queryAllByRole('checkbox')).toHaveLength(0)
   })
 
   it('sede nuova senza listino: a schermo c\'è la spiegazione di che cosa fare, non un silenzio', async () => {

@@ -255,6 +255,12 @@ export function EnrollmentWizard({ scuolaId = null }: { scuolaId?: string | null
   // Quota di nuova iscrizione e documenti dell'anno (accessoria: se la lettura non riesce il pannello dice solo l'anno).
   const infoAnno = useInfoAnno({ sedeId: sedeAnni, annoId: annoEffettivo })
   const etichettaAnnoEffettivo = anni.anni.find((a) => a.anno_id === annoEffettivo)?.etichetta_breve ?? null
+  /**
+   * Il nome della scuola a cui si sta scrivendo, da scrivere in testa insieme all'anno. Se la sede è stata scelta dall'elenco
+   * è il nome dell'elenco; se viene dal link (`?scuola=`, anche la sede di prova, che dall'elenco è esclusa) lo dice l'API degli
+   * anni. Senza nome non si scrive niente (mai «null» a schermo): è l'unico dato di sede che il modulo mostra.
+   */
+  const nomeSede = (sedeAnni ? sedi.find((x) => x.id === sedeAnni)?.nome : null) ?? anni.sedeNome
   /** Le iscrizioni della sede sono chiuse, e la famiglia non ha un'altra sede fra cui scegliere. */
   const annoChiusoSenzaAlternative = anni.chiuso && !mostraSede
   /**
@@ -709,6 +715,13 @@ export function EnrollmentWizard({ scuolaId = null }: { scuolaId?: string | null
               <UserPlus className="w-3.5 h-3.5" aria-hidden="true" />
               {t('wizardEyebrow')}
             </h1>
+            {!done && formaDecisa && nomeSede && (
+              <p className="mb-1 text-sm font-semibold text-kidville-green break-words">
+                {etichettaAnnoEffettivo
+                  ? ta('domandaTitolo', { scuola: nomeSede, anno: etichettaAnnoEffettivo })
+                  : ta('domandaTitoloSenzaAnno', { scuola: nomeSede })}
+              </p>
+            )}
             {!done && formaDecisa && (
               <p className="text-xs text-kidville-sub font-medium">
                 {t('wizardPassoDi', { corrente: step + 1, totale: steps.length })}

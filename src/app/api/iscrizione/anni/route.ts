@@ -25,7 +25,9 @@ const getQuerySchema = z.object({ scuola_id: zUuid })
  *
  * È ANONIMA (il prefisso `/api/iscrizione` è nell'allowlist di `middleware-rules`), quindi:
  *  - espone SOLO `anno_id`, `etichetta_breve` e `ingresso` (`durante` = il bambino entra subito, `inizio` =
- *    entra a inizio anno): nessuna data della sede, nessuno stato, nessun uuid di sede;
+ *    entra a inizio anno), più `scuola_nome`, il nome PUBBLICO della sede del link (lo stesso dell'elenco `sedi`): il
+ *    modulo lo scrive in testa, così chi ha incollato il link sbagliato se ne accorge. Nessuna data della sede,
+ *    nessuno stato, nessun uuid di sede;
  *  - la sede deve essere fra quelle del deployment (`tutte` di `sediReali`, E2E incluse: il POST accetta lo
  *    stesso predicato e il link targato dell'E2E entra da lì). Una sede sconosciuta è 400 `SEDE_DA_SPECIFICARE`, e non dice nulla degli anni;
  *  - sta dietro un rate-limit anti-abuso come `sedi`.
@@ -52,7 +54,8 @@ export const GET = withRoute('iscrizione/anni:GET', async (request: NextRequest)
   const supabase = await createAdminClient()
   const { tutte, error } = await sediReali(supabase, 'iscrizione/anni:GET')
   if (error) return rispostaGuastoGiaRegistrato()
-  if (!tutte.some((s) => s.id === q.data.scuola_id)) {
+  const sede = tutte.find((s) => s.id === q.data.scuola_id)
+  if (!sede) {
     // Lo stesso rifiuto del POST per una sede che non c'è: la sede va indicata (di nuovo). Non dice nulla degli anni.
     return NextResponse.json(
       { error: 'Specificare la sede a cui si riferisce questa operazione', codice: 'SEDE_DA_SPECIFICARE' },
@@ -63,12 +66,12 @@ export const GET = withRoute('iscrizione/anni:GET', async (request: NextRequest)
   const esito = await anniOffertiPubblici(supabase, q.data.scuola_id)
   if ('guasto' in esito) return rispostaGuastoGiaRegistrato()
   if ('indietro' in esito) {
-    return NextResponse.json({ success: true, data: { anni: [], scelta: false, chiuso: false } })
+    return NextResponse.json({ success: true, data: { anni: [], scelta: false, chiuso: false, scuola_nome: sede.nome } })
   }
   // `chiuso`: lo schema c'è e nessun anno accetta domande. È l'unico modo per il wizard di distinguerlo da
   // «database in ritardo» (anni vuoti, non chiuso) e dirlo PRIMA di far compilare quattro passi.
   return NextResponse.json(
-    { success: true, data: { anni: esito.anni, scelta: esito.scelta, chiuso: esito.chiuso } },
+    { success: true, data: { anni: esito.anni, scelta: esito.scelta, chiuso: esito.chiuso, scuola_nome: sede.nome } },
     { headers: intestazioniCachePubblica(request, CACHE_SECONDI, CACHE_STANTIO) },
   )
 })

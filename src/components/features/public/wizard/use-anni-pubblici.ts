@@ -61,14 +61,16 @@ interface EsitoAnni {
   anni: AnnoPubblicoVoce[]
   scelta: boolean
   chiuso: boolean
+  /** Il nome pubblico della sede, se l'API lo ha detto. */
+  sedeNome: string | null
 }
 
 /**
  * Estrae l'elenco dalla risposta di `/api/iscrizione/anni`, scartando le voci di forma inattesa.
  * `null` = il corpo non contiene l'elenco (non è un guasto da mostrare: si degrada a «nessuna scelta»).
  */
-export function anniValidi(payload: unknown): { anni: AnnoPubblicoVoce[]; scelta: boolean; chiuso: boolean } | null {
-  const data = (payload as { data?: { anni?: unknown; scelta?: unknown; chiuso?: unknown } } | null)?.data
+export function anniValidi(payload: unknown): { anni: AnnoPubblicoVoce[]; scelta: boolean; chiuso: boolean; sedeNome: string | null } | null {
+  const data = (payload as { data?: { anni?: unknown; scelta?: unknown; chiuso?: unknown; scuola_nome?: unknown } } | null)?.data
   if (!data || !Array.isArray(data.anni)) return null
   const anni = data.anni
     .filter(
@@ -80,7 +82,9 @@ export function anniValidi(payload: unknown): { anni: AnnoPubblicoVoce[]; scelta
     )
     .map((a) => ({ anno_id: a.anno_id, etichetta_breve: a.etichetta_breve, ingresso: a.ingresso }))
   // `scelta` si ricalcola dalle voci buone: il server lo dice, ma una sola voce non è mai una scelta.
-  return { anni, scelta: data.scelta === true && anni.length > 1, chiuso: data.chiuso === true }
+  // Il nome pubblico della sede (mai un valore vuoto o di forma strana: senza, il modulo non scrive niente).
+  const sedeNome = typeof data.scuola_nome === 'string' && data.scuola_nome.trim().length > 0 ? data.scuola_nome.trim() : null
+  return { anni, scelta: data.scelta === true && anni.length > 1, chiuso: data.chiuso === true, sedeNome }
 }
 
 export interface AnniPubblici {
@@ -89,6 +93,8 @@ export interface AnniPubblici {
   scelta: boolean
   /** Il server ha detto che nessun anno accetta domande. */
   chiuso: boolean
+  /** Il nome pubblico della sede del link, come lo dice `/api/iscrizione/anni`; `null` finché non è arrivato o se non c'è. */
+  sedeNome: string | null
   /** L'elenco di questa sede non è ancora arrivato (mai vero se la sede non è nota). */
   inCaricamento: boolean
   /** Quante letture dell'elenco si sono concluse (riuscite o no) per questa sede: chi ricarica sa così quando è finita. */
@@ -118,13 +124,13 @@ export function useAnniPubblici({ sedeId }: { sedeId: string | null }): AnniPubb
     let concluso = false
     let timer: ReturnType<typeof setTimeout> | undefined
     let chiudiSenzaEsito: () => void = () => {}
-    const nessuna = { anni: [] as AnnoPubblicoVoce[], scelta: false, chiuso: false }
+    const nessuna = { anni: [] as AnnoPubblicoVoce[], scelta: false, chiuso: false, sedeNome: null as string | null }
     inVolo.current = new Promise<{ scelta: boolean; chiuso: boolean }>((risolvi) => {
       /**
        * Chiude questa lettura, UNA volta sola: la prima fra risposta e scadenza vince, l'altra non conta.
        * `guasto`: se per questa sede c'è già un elenco (è una ricarica) resta quello, non diventa «nessuno».
        */
-      const concludi = (lista: { anni: AnnoPubblicoVoce[]; scelta: boolean; chiuso: boolean }, guasto = false) => {
+      const concludi = (lista: { anni: AnnoPubblicoVoce[]; scelta: boolean; chiuso: boolean; sedeNome: string | null }, guasto = false) => {
         if (concluso) return
         concluso = true
         if (timer !== undefined) clearTimeout(timer)
@@ -185,6 +191,7 @@ export function useAnniPubblici({ sedeId }: { sedeId: string | null }): AnniPubb
     anni: valido ? esito.anni : [],
     scelta: valido ? esito.scelta : false,
     chiuso: valido ? esito.chiuso : false,
+    sedeNome: valido ? esito.sedeNome : null,
     inCaricamento: sedeId !== null && !valido,
     letture,
     attendi,
