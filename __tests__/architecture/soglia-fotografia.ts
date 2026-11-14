@@ -462,6 +462,7 @@ export function posterioriCheContengono(
 // La applica l'integrazione al merge; le fotografie si aggiornano nella PR-B.
 export const MIGRAZIONI_ATTESE_AL_MERGE: Readonly<Record<string, string>> = {
     '20261114124928_demo_funzioni_ripristino.sql': 'funzioni demo_*: tabella privata demo_fotografie (RLS accesa, un UNIQUE) e funzioni di ripristino della sola sede di prova; la applica l\'integrazione al merge, la voce si toglie nella PR-B (14/11/2026)',
+    '20261114195853_demo_ripristina_genitori_di_prova.sql': 'demo_ripristina toglie anche i genitori di prova (email .test, nati dopo la partenza, senza legami né sedi vere) con il loro utente e il loro accesso; nessuna tabella, nessun vincolo nuovo, solo funzioni (CREATE OR REPLACE) e un aiuto interno; la applica l\'integrazione al merge, la voce si toglie nella PR-B (14/11/2026)',
 }
 
 /**
