@@ -466,8 +466,11 @@ export function posterioriCheContengono(
 // `(scuola_id, scattata_il)`); tabelle con `scuola_id` e FK di sede 102 -> 103; tabelle con RLS accesa 184 -> 185 (`demo_fotografie`, nessuna
 // policy, 40 invariate); funzioni che scrivono nel registro 71 -> 72 (`demo_ripristina`, classe `oblio`). Tabelle dell'anno (46, verificate), bucket e
 // schema delle candidature: non toccati.
+// 2026-11-14 · `20261114195853_demo_ripristina_genitori_di_prova.sql`: `CREATE OR REPLACE` di `demo_ripristina` e `demo_controllo` (stessa firma, stessi grant) e una
+// funzione d'appoggio senza grant; nessuna tabella, nessun vincolo. SVUOTATA il 14/11/2026 (PR-B dopo il merge di #321, `ea48e2c1`): la migrazione e'
+// registrata una volta sola, con la version del file (migrazioni 281 -> 282); le fotografie della RLS e degli indici unici cambiano solo nell'istante (contenuto identico, verificato con un hash dalla produzione); le altre non cambiano (le funzioni che scrivono nel registro
+// restano 72, `demo_ripristina` con le stesse cinque tabelle).
 export const MIGRAZIONI_ATTESE_AL_MERGE: Readonly<Record<string, string>> = {
-    '20261114195853_demo_ripristina_genitori_di_prova.sql': 'demo_ripristina toglie anche i genitori di prova (email .test, nati dopo la partenza, senza legami né sedi vere) con il loro utente e il loro accesso; nessuna tabella, nessun vincolo nuovo, solo funzioni (CREATE OR REPLACE) e un aiuto interno; la applica l\'integrazione al merge, la voce si toglie nella PR-B (14/11/2026)',
 }
 
 /**

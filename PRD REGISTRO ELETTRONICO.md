@@ -29,6 +29,8 @@
 - Posti per classe nel cruscotto: la route li dà per fascia, non per classe.
 - La causa del «primo clic a vuoto» sul pulsante della home non è stata trovata.
 
+**Pulizia dopo il merge di #321 (2026-11-14).** La migrazione `20261114195853_demo_ripristina_genitori_di_prova.sql` è in produzione (integrazione Supabase, una riga in `schema_migrations`, version uguale a quella del file). La fotografia delle migrazioni è rigenerata dalla produzione (281 -> 282) e `MIGRAZIONI_ATTESE_AL_MERGE` è di nuovo vuoto. Le fotografie della RLS e degli indici unici sono riscattate (stesso contenuto, controllato con un hash dalla produzione: 40 policy, 103 tabelle con `scuola_id`, 185 con RLS accesa, 301 indici unici; cambia solo l'istante, perché i lock guardano il testo della migrazione). Le altre fotografie non cambiano: la migrazione non aggiunge tabelle, vincoli, indici né policy, e `demo_ripristina` scrive le stesse cinque tabelle del registro (72 funzioni, invariate). Dopo il merge il ripristino della Demo ha tolto il genitore di prova rimasto (1 genitore, con utente e accesso); `demo_controllo` è risultato tutto vero e le invarianti sono a zero.
+
 ---
 
 ## 🧭 Changelog — Anno scolastico, semplificazioni dopo la prova con una segretaria inesperta (agente 2, primo giro) — 2026-11-14 (ramo `feat/anno-collaudo-giro-agente2`)

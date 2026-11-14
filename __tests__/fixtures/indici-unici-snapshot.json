@@ -1,7 +1,7 @@
 {
   "_come_si_rigenera": "node __tests__/fixtures/indici-unici-fotografia.mjs --sql | (esegui su prod) ; node __tests__/fixtures/indici-unici-fotografia.mjs < risposta.json",
   "generato_il": "2026-11-14",
-  "generato_alle": "2026-11-14T19:10:00Z",
+  "generato_alle": "2026-11-14T22:04:02Z",
   "sha256": "d4637ebc6b9134ef59965e92a7e24bedff46f2fe60baecdb74cb7d4d90e4ef2e",
   "indici": [
     {
