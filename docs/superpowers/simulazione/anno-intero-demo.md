@@ -198,18 +198,18 @@ la segreteria lo importa, nascono un alunno, un genitore (`parents`, col suo `au
 1. la riga `parents` è nata dopo la partenza;
 2. dopo l'azzeramento non ha più **nessun legame** con nessun alunno (`student_parents`, `legame_genitori_alunni`, `student_guardians` e ogni altra tabella che
    lega un genitore a un alunno: la funzione le legge dalle chiavi esterne vere, non da un elenco);
-3. il suo utente (se c'è) ha ruolo `genitore`, è nato dopo la partenza, ha come sede (se ne ha una) una sede `e2e00000…` e **nessuna** riga in `utenti_scuole`
+3. il suo utente **esiste** (se manca la riga `utenti` il genitore resta: ruolo e data non si possono verificare), ha ruolo `genitore`, è nato dopo la partenza, ha come sede (se ne ha una) una sede `e2e00000…` e **nessuna** riga in `utenti_scuole`
    per una sede che non comincia per `e2e00000`;
 4. l'email dell'utente di accesso **finisce in `.test`** (il dominio riservato dallo standard, RFC 2606: non può essere di una persona vera, ed è quello che le
    prove usano per regola). Senza utente di accesso l'email non si può verificare: il genitore resta.
 
 Resta anche un genitore a cui è attaccata una riga che una chiave NO ACTION/RESTRICT non lascerebbe cancellare (una firma, una voce, un registro…) o il cui
-accesso lo usa un altro genitore che resta. Si tolgono **con lui** l'invito con le credenziali (contiene l'email) e le accettazioni dei consensi (senza chiave
+accesso lo usa un altro genitore che resta; la cancellazione è per singolo genitore, e se una chiave NO ACTION non diretta (un figlio a cascata) la fa fallire, quel genitore resta e il ripristino prosegue. Chi resta per questo motivo compare in `lasciate` con `motivo` = nome del vincolo (mai dati personali; c'è anche un `NOTICE` con l'uuid). **Limite noto:** una chiave `DEFERRABLE INITIALLY DEFERRED` non diretta non scatta nel sotto-blocco ma a `SET CONSTRAINTS … IMMEDIATE`: il ripristino intero fallisce e non scrive niente. Si legge il messaggio d'errore, si toglie la riga a mano o si rifà il ripristino. Si tolgono **con lui** l'invito con le credenziali (contiene l'email) e le accettazioni dei consensi (senza chiave
 esterna); il resto (notifiche, sottoscrizioni push, sedi dell'utente, chat) va via a cascata. L'ordine è dipendenti, `parents`, `utenti`, `auth.users`.
 
 Nel riassunto c'è una voce dell'`azzeramento`, «genitori di prova nati dopo la partenza (solo email .test, senza legami né sedi vere)», con `tolte` e `lasciate`;
 **chi resta compare in `lasciate`, per tabella (`parents`, e `utenti` se è nato dopo la partenza) e uuid**. Un genitore legato a un alunno di una **sede vera** non è
-roba della prova: non si tocca e non si elenca. Mai l'email nel riassunto: solo uuid e conteggi. `demo_controllo` segnala un genitore `.test` nato dopo la partenza
+roba della prova: non si tocca e non si elenca; lo stesso un genitore nato dopo la partenza **senza alcun indizio di Demo** (nessun legame con alunni di prova, email non `.test`, nessuna sede `e2e00000…` dell'utente). L'email si confronta in minuscolo e senza spazi (`.TEST` vale come `.test`). Mai l'email nel riassunto: solo uuid e conteggi. `demo_controllo` segnala un genitore `.test` nato dopo la partenza
 e rimasto senza legami: se dopo il ripristino è rosso, un criterio l'ha tenuto fermo, e `lasciate` dice quale genitore guardare.
 
 **Che cosa NON copre** (si legge nel risultato, `incassi_su_voci_precedenti_non_toccati`, e nelle righe lasciate): un incasso nato dopo la partenza su una

@@ -33,7 +33,8 @@ beforeAll(async () => {
   // si porta dietro una cancellazione. Le azioni ON DELETE sono quelle VERE (lette dalle migrazioni).
   await b.db.exec(`
     CREATE TABLE auth.users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), email text);
-    ALTER TABLE public.utenti ADD COLUMN IF NOT EXISTS email text, ADD COLUMN IF NOT EXISTS ruolo text, ADD COLUMN IF NOT EXISTS scuola_id uuid;
+    ALTER TABLE public.parents ADD COLUMN IF NOT EXISTS nome text, ADD COLUMN IF NOT EXISTS cognome text, ADD COLUMN IF NOT EXISTS email text;
+    ALTER TABLE public.utenti ADD COLUMN IF NOT EXISTS nome text, ADD COLUMN IF NOT EXISTS cognome text, ADD COLUMN IF NOT EXISTS email text, ADD COLUMN IF NOT EXISTS ruolo text, ADD COLUMN IF NOT EXISTS scuola_id uuid;
     ALTER TABLE public.utenti ADD CONSTRAINT utenti_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE NOT VALID;
     ALTER TABLE public.parents ADD CONSTRAINT parents_auth_user_id_fkey FOREIGN KEY (auth_user_id) REFERENCES auth.users(id) ON DELETE SET NULL;
     CREATE TABLE public.utenti_scuole (utente_id uuid NOT NULL REFERENCES public.utenti(id) ON DELETE CASCADE, scuola_id uuid NOT NULL);
@@ -46,6 +47,8 @@ beforeAll(async () => {
     CREATE TABLE public.notifiche (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), utente_id uuid NOT NULL REFERENCES public.utenti(id) ON DELETE CASCADE);
     CREATE TABLE public.firme_documenti (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), utente_id uuid NOT NULL REFERENCES public.utenti(id));
     CREATE TABLE public.consensi_accettazioni (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), parent_id uuid NOT NULL);
+    -- un figlio del figlio: la notifica va via a cascata con l'utente, ma questa riga la tiene ferma con una chiave NO ACTION (non diretta verso utenti)
+    CREATE TABLE public.notifiche_letture (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), notifica_id uuid NOT NULL REFERENCES public.notifiche(id));
   `)
   for (const m of MIGRAZIONI) await b.db.exec(m)
 
@@ -68,8 +71,10 @@ const adesso = () => una<string>(b.db, `SELECT now()::text`)
 
 type Esito = {
   azzeramento: { voce: string; tolte: number; rimesse: number; lasciate: number }[]
-  lasciate: { tabella: string; id: string }[]
+  lasciate: { tabella: string; id: string; motivo?: string }[]
 }
+// nomi ed email FINTI messi di proposito su parents/utenti: nel riassunto non devono comparire mai
+const NOMI_FINTI = /NomeFinto|CognomeFinto|FintaDemo|EmailFinta|kidville\.test|@/
 const VOCE = /^genitori di prova nati dopo la partenza/
 
 async function ripristina(partenza: string): Promise<Esito> {
@@ -92,12 +97,12 @@ async function genitore(o: {
   let utente: string | null = null
   if (auth && o.utente !== false) {
     const u = { ruolo: 'genitore', prima: false, scuola: DEMO as string | null, sedi: [DEMO], ...o.utente }
-    await q(`INSERT INTO public.utenti (id, email, ruolo, scuola_id, creato_il) VALUES ($1, 'x', $2, $3, ${u.prima ? prima : 'now()'})`, [auth, u.ruolo, u.scuola])
+    await q(`INSERT INTO public.utenti (id, email, ruolo, scuola_id, creato_il, nome, cognome) VALUES ($1, 'EmailFintaDemo@kidville.test', $2, $3, ${u.prima ? prima : 'now()'}, 'NomeFintoDemo', 'CognomeFintoDemo')`, [auth, u.ruolo, u.scuola])
     for (const s of u.sedi) await q(`INSERT INTO public.utenti_scuole (utente_id, scuola_id) VALUES ($1, $2)`, [auth, s])
     utente = auth
   }
   const parent = await una<string>(b.db,
-    `INSERT INTO public.parents (auth_user_id, created_at) VALUES ($1, ${o.parentPrima ? prima : 'now()'}) RETURNING id`, [auth])
+    `INSERT INTO public.parents (auth_user_id, created_at, nome, cognome, email) VALUES ($1, ${o.parentPrima ? prima : 'now()'}, 'NomeFintoDemo', 'CognomeFintoDemo', 'MammaFintaDemo@kidville.test') RETURNING id`, [auth])
   if (o.legame?.via === 'student_parents') await q(`INSERT INTO public.student_parents (student_id, parent_id) VALUES ($1, $2)`, [o.legame.alunno, parent])
   if (o.legame?.via === 'legame') await q(`INSERT INTO public.legame_genitori_alunni (genitore_id, alunno_id) VALUES ($1, $2)`, [utente, o.legame.alunno])
   if (o.legame?.via === 'guardians') await q(`INSERT INTO public.student_guardians (alunno_id, parent_id) VALUES ($1, $2)`, [o.legame.alunno, parent])
@@ -135,7 +140,7 @@ describe('demo_ripristina · i genitori di prova', () => {
       expect(await conta(`SELECT 1 FROM public.consensi_accettazioni WHERE parent_id = $1`, [g.parent]), 'il consenso è andato').toBe(0)
       expect(voce(e)).toMatchObject({ tolte: 1, lasciate: 0 })
       expect(e.lasciate.filter((l) => l.tabella === 'parents' || l.tabella === 'utenti')).toEqual([])
-      expect(JSON.stringify(e), 'mai l’email nel riassunto').not.toMatch(/kidville\.test|@/)
+      expect(JSON.stringify(e), 'mai l’email nel riassunto').not.toMatch(NOMI_FINTI)
     })
   })
 
@@ -174,13 +179,65 @@ describe('demo_ripristina · i genitori di prova', () => {
     })
   })
 
-  it('senza utente di accesso non si può verificare l’email → RESTA', async () => {
+  it('senza utente di accesso non si può verificare l’email → RESTA, e senza alcun indizio di Demo non è nemmeno elencato', async () => {
     await inRollback(b.db, async () => {
       const p = await partenza()
       const g = await genitore({ email: null })
       const e = await ripristina(p)
       expect(await conta(`SELECT 1 FROM public.parents WHERE id = $1`, [g.parent])).toBe(1)
+      expect(e.lasciate.map((l) => l.id)).not.toContain(g.parent)
+      expect(voce(e)).toMatchObject({ tolte: 0, lasciate: 0 })
+    })
+  })
+
+  it('un genitore nuovo di una sede VERA (email non .test, utente solo in sede vera) non è roba della Demo: non si tocca e non si elenca', async () => {
+    await inRollback(b.db, async () => {
+      const p = await partenza()
+      const g = await genitore({ email: 'famiglia@example.com', utente: { scuola: SEDE_VERA, sedi: [SEDE_VERA] } })
+      const e = await ripristina(p)
+      expect(await esiste(g)).toEqual(RIMASTO)
+      expect(e.lasciate.map((l) => l.id)).not.toContain(g.parent)
+      expect(e.lasciate.map((l) => l.id)).not.toContain(g.utente)
+      expect(voce(e)).toMatchObject({ tolte: 0, lasciate: 0 })
+    })
+  })
+
+  it('email in MAIUSCOLO (.TEST, con spazi) vale come .test: il genitore di prova va via', async () => {
+    await inRollback(b.db, async () => {
+      const p = await partenza()
+      const g = await genitore({ email: '  Famiglia@KIDVILLE.TEST ' })
+      const e = await ripristina(p)
+      expect(await esiste(g)).toEqual(ANDATO)
+      expect(voce(e)).toMatchObject({ tolte: 1, lasciate: 0 })
+    })
+  })
+
+  it('manca la riga in utenti (accesso .test, nessun controllo possibile su ruolo e data) → il genitore RESTA e compare fra le lasciate', async () => {
+    await inRollback(b.db, async () => {
+      const p = await partenza()
+      const g = await genitore({ utente: false })
+      const e = await ripristina(p)
+      expect(await esiste(g)).toEqual({ parents: 1, utenti: 0, auth: 1 })
       expect(e.lasciate).toContainEqual({ tabella: 'parents', id: g.parent })
+      expect(voce(e)).toMatchObject({ tolte: 0, lasciate: 1 })
+    })
+  })
+
+  it('un figlio a cascata con chiave NO ACTION (non diretta) fa restare SOLO quel genitore: il ripristino non fallisce e gli altri vanno via', async () => {
+    await inRollback(b.db, async () => {
+      const p = await partenza()
+      const bloccato = await genitore()
+      const libero = await genitore()
+      const n = await una<string>(b.db, `INSERT INTO public.notifiche (utente_id) VALUES ($1) RETURNING id`, [bloccato.utente])
+      await b.db.query(`INSERT INTO public.notifiche_letture (notifica_id) VALUES ($1)`, [n])
+      const e = await ripristina(p)
+      expect(await esiste(bloccato), 'resta intero, con la sua notifica').toEqual(RIMASTO)
+      expect(await conta(`SELECT 1 FROM public.notifiche WHERE id = $1`, [n])).toBe(1)
+      expect(await esiste(libero), 'l’altro è andato').toEqual(ANDATO)
+      expect(e.lasciate).toContainEqual(expect.objectContaining({ tabella: 'parents', id: bloccato.parent }))
+      expect(e.lasciate.find((l) => l.tabella === 'parents' && l.id === bloccato.parent)?.motivo, 'il motivo è il nome della chiave').toContain('notifiche_letture_notifica_id_fkey')
+      expect(e.lasciate).toContainEqual(expect.objectContaining({ tabella: 'utenti', id: bloccato.utente }))
+      expect(voce(e)).toMatchObject({ tolte: 1, lasciate: 1 })
     })
   })
 
@@ -300,7 +357,7 @@ describe('demo_ripristina · i genitori di prova', () => {
       expect(msg).toMatch(/DEMO_PROVA_A_SECCO/)
       const riassunto = JSON.parse(msg.slice(msg.indexOf('{'))) as Esito
       expect(voce(riassunto)).toMatchObject({ tolte: 1, lasciate: 0 })
-      expect(msg).not.toMatch(/kidville\.test|@/)
+      expect(msg).not.toMatch(NOMI_FINTI)
       expect(await esiste(g), 'a secco: tutto com’era').toEqual(RIMASTO)
       expect(await conta(`SELECT 1 FROM public.consensi_accettazioni WHERE parent_id = $1`, [g.parent])).toBe(1)
       const vero = await ripristina(p)
