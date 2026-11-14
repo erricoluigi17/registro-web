@@ -169,8 +169,10 @@ describe('GET /api/iscrizione/anni · l\'elenco pubblico', () => {
     h.db.anni_scolastici = anniScolastici().map((a) => ({ ...a, inizio: '2026-09-01', stato_interno: 'x' }))
     const res = await ELENCO_ANNI(richiestaAnni(SEDE_A))
     const corpo = (await res.json()) as CorpoAnni
-    // Tutto il corpo ha solo `anni`, `scelta` e `chiuso` (un booleano): niente altro che un genitore non debba vedere.
-    expect(Object.keys(corpo.data ?? {}).sort()).toEqual(['anni', 'chiuso', 'scelta'])
+    // Tutto il corpo ha solo `anni`, `scelta`, `chiuso` (un booleano) e `scuola_nome` (il nome pubblico della sede, lo stesso dell'elenco
+    // delle sedi): niente altro che un genitore non debba vedere.
+    expect(Object.keys(corpo.data ?? {}).sort()).toEqual(['anni', 'chiuso', 'scelta', 'scuola_nome'])
+    expect(corpo.data).toMatchObject({ scuola_nome: 'Sede Alfa' })
     for (const anno of corpo.data?.anni ?? []) {
       expect(Object.keys(anno).sort()).toEqual(['anno_id', 'etichetta_breve', 'ingresso'])
     }
@@ -187,19 +189,20 @@ describe('GET /api/iscrizione/anni · l\'elenco pubblico', () => {
       anni: [{ anno_id: A_CORR, etichetta_breve: '2026/27', ingresso: 'durante' }],
       scelta: false,
       chiuso: false,
+      scuola_nome: 'Sede Alfa',
     })
   })
 
   it('nessun anno offerto: elenco vuoto, scelta falsa e chiuso vero (il wizard lo dice prima di far compilare)', async () => {
     h.db.anni_sede = h.db.anni_sede.map((r) => ({ ...r, domande_aperte: false }))
     const corpo = (await (await ELENCO_ANNI(richiestaAnni(SEDE_A))).json()) as CorpoAnni
-    expect(corpo.data).toEqual({ anni: [], scelta: false, chiuso: true })
+    expect(corpo.data).toEqual({ anni: [], scelta: false, chiuso: true, scuola_nome: 'Sede Alfa' })
   })
 
   it('una sede SENZA alcuna riga di anni (appena nata): non è "chiusa", è senza anno — e il POST scrive come sempre', async () => {
     h.db.anni_sede = []
     const corpo = (await (await ELENCO_ANNI(richiestaAnni(SEDE_A))).json()) as CorpoAnni
-    expect(corpo.data).toEqual({ anni: [], scelta: false, chiuso: false })
+    expect(corpo.data).toEqual({ anni: [], scelta: false, chiuso: false, scuola_nome: 'Sede Alfa' })
     const res = await invia(SEDE_A)
     expect(res.status).toBe(201)
     expect(inserimenti()[0].valori[0]).not.toHaveProperty('anno_id')
@@ -240,7 +243,7 @@ describe('GET /api/iscrizione/anni · l\'elenco pubblico', () => {
     const res = await ELENCO_ANNI(richiestaAnni(SEDE_A))
     expect(res.status).toBe(200)
     // `chiuso: false`: un database in ritardo NON è "iscrizioni chiuse".
-    expect(((await res.json()) as CorpoAnni).data).toEqual({ anni: [], scelta: false, chiuso: false })
+    expect(((await res.json()) as CorpoAnni).data).toEqual({ anni: [], scelta: false, chiuso: false, scuola_nome: 'Sede Alfa' })
     expect(res.headers.get('Cache-Control') ?? '').not.toContain('public')
     expect(h.logEvento.mock.calls.filter((c) => c[1] === 'error')).toHaveLength(0)
   })
