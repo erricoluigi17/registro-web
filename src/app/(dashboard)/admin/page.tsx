@@ -28,6 +28,7 @@ import { Donut, Live, SectionTitle } from '@/components/ui/cockpit';
 import { Badge } from '@/components/ui/Badge';
 import { btnClass } from '@/components/ui/Btn';
 import { HeroCard } from '@/components/features/shell/HeroCard';
+import { PreparaAnnoProssimo } from '@/components/features/admin/home/PreparaAnnoProssimo';
 import { useClientValue } from '@/lib/hooks/use-client-value';
 import { greetingByHour } from '@/lib/ui/greeting';
 import { useSessionIdentity } from '@/lib/auth/use-session-identity';
@@ -195,6 +196,10 @@ function AdminDashboardInner() {
           </Link>
         </div>
       </div>
+
+      {/* Il punto di partenza per «preparare l'anno prossimo»: compare solo con un anno in preparazione o con
+          le iscrizioni aperte (prova di usabilità 2026-11). */}
+      <PreparaAnnoProssimo userId={userId} withUser={withUser} />
 
       {(error || (ready && !userId)) && (
         <div className="mt-6 rounded-2xl border border-kidville-error/30 bg-kidville-error-soft p-4 font-maven text-sm text-kidville-error">

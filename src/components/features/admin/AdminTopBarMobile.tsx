@@ -21,7 +21,8 @@
  * nessuna parte sotto i 1024px: il selettore esisteva solo nella topbar
  * desktop, `hidden … lg:flex`. Qui c'è la variante `compatto` (una riga, niente
  * contatore alunni: nessuna chiamata in più) — e con una sede sola non si monta,
- * perché non c'è niente da scegliere. La scelta estesa, con le tre righe e la
+ * perché non c'è niente da scegliere: al suo posto `SedeNome` scrive il nome della sede, in sola lettura
+ * (2026-11: la prova di usabilità non trovava scritto su quale scuola si lavorava). La scelta estesa, con le tre righe e la
  * spunta, resta nel bottom-sheet «Menu».
  */
 
@@ -29,7 +30,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { useAdminIdentity } from '@/lib/context/admin-identity';
-import { SedeSelector } from '@/components/ui/cockpit';
+import { SedeNome, SedeSelector } from '@/components/ui/cockpit';
 import { AdminNotificationsPanel } from './AdminNotificationsPanel';
 
 export function AdminTopBarMobile() {
@@ -48,6 +49,7 @@ export function AdminTopBarMobile() {
           style={{ height: 19, width: 'auto', display: 'block' }}
         />
       </Link>
+      <SedeNome compatto />
       <SedeSelector userId={userId} compatto />
       <AdminNotificationsPanel userId={userId} attivoSu="(max-width: 743.98px)" />
     </header>
