@@ -310,7 +310,7 @@ type Comuni = {
   soloLettura: boolean;
   stato: string;
   annoEtichetta?: string;
-  /** La retta è già stata salvata da questa schermata (l'avviso «importo copiato» non serve più). */
+  /** Un importo diverso è stato salvato da questa schermata (l'avviso «stesso importo dell'anno scorso» non serve più). */
   retteConfermate: boolean;
   confermaRette: () => void;
   annoPrecedenteSedeId: string | null;
@@ -538,7 +538,7 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
     // I mesi si scelgono solo per la riga «Tutte le fasce», e si mandano solo se sono cambiati: lasciati com'erano restano «come sempre».
     const perTutte = fascia === TUTTE;
     if (perTutte && mesi.length === 0) return c.setEsito({ area, tipo: 'errore', errore: { tipo: 'campo', chiave: 'mesi' } });
-    const importoCambiato = rette.find((r) => r.fascia === (perTutte ? null : fascia))?.importo !== n;
+    const importoCambiato = rette.find((r) => r.voce === 'retta' && r.fascia === (perTutte ? null : fascia))?.importo !== n;
     const mandaMesi = perTutte && !stessiMesi(mesi, mesiEffettivi);
     const corpo = { voce: 'retta', fascia: perTutte ? null : fascia, importo: n, ...(mandaMesi ? { mesi: [...mesi].sort((a, b) => a - b) } : {}) };
     const ok = await c.scrivi(area, 'PUT', `${c.base}/rette`, corpo, (d) => (d?.cambiato === false ? t('nessunaModifica') : c.annoEtichetta ? t('retteSalvataAnno', { anno: c.annoEtichetta }) : t('retteSalvata')));
