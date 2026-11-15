@@ -138,6 +138,9 @@ export async function obliaCrmAlunno(
         routine: null,
         paura: null,
         desiderio: null,
+        // Il riassunto dell'assistente è testo libero sulla famiglia: può nominare il bambino o dire della sua salute.
+        ai_riassunto: null,
+        ai_aggiornata_il: null,
         anonimizzata_il: at,
         aggiornata_il: at,
       })

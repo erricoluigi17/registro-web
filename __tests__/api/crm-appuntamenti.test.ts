@@ -665,6 +665,18 @@ describe('PATCH /api/admin/crm/appuntamenti/[id]', () => {
             expect(h.notifica).not.toHaveBeenCalled()
         })
 
+        it('con un nuovo orario la conferma del promemoria si azzera; con la sola persona resta', async () => {
+            const v = h.db.crm_appuntamenti.find((a) => a.id === VISITA)!
+            v.promemoria_conferma = true
+            v.promemoria_conferma_il = '2026-11-01T09:00:00.000Z'
+            h.db.utenti.push({ id: U3, nome: 'Sara', cognome: 'Prova', ruolo: 'segreteria', scuola_id: SEDE_A, archiviato_il: null })
+            await PATCH(patch({ azione: 'sposta', inizio: '2026-11-02T08:00:00.000Z', assegnataA: U3 }), ctx())
+            expect(riga('crm_appuntamenti', VISITA)).toMatchObject({ promemoria_conferma: true, promemoria_conferma_il: '2026-11-01T09:00:00.000Z' })
+
+            await PATCH(patch({ azione: 'sposta', inizio: '2026-11-04T11:00' }), ctx())
+            expect(riga('crm_appuntamenti', VISITA)).toMatchObject({ promemoria_conferma: null, promemoria_conferma_il: null })
+        })
+
         it('la durata si può cambiare: la fine segue', async () => {
             await PATCH(patch({ azione: 'sposta', inizio: '2026-11-02T10:00', durataMin: 60 }), ctx())
             expect(riga('crm_appuntamenti', VISITA)).toMatchObject({

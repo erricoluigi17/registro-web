@@ -145,6 +145,10 @@ describe('POST /api/crm/ai/contatti/aggiorna', () => {
     expect(h.rpc).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       p_scheda_id: SCHEDA, p_telefono_norm: null,
       p_dati: { stato: 'non_contattare', riassunto: RIASSUNTO, non_contattare: true },
+      // L'impronta si calcola con lo schedaId minuscolo: maiuscolo o minuscolo è la stessa richiesta.
+      p_impronta: improntaDi({
+        schedaId: SCHEDA, stato: 'non_contattare', riassunto: RIASSUNTO, non_contattare: true,
+      }),
     }))
   })
 

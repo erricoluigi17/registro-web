@@ -104,6 +104,12 @@ describe('visite non venute', () => {
     nessunNomeIn(j, [TEL_NORM])
   })
 
+  it('una scheda non trovata ha telefono null e nonContattare true (nel dubbio non si scrive)', async () => {
+    h.db.crm_appuntamenti.push(visita({ scheda_id: S_ANON }))
+    const j = await (await nonVenute()).json()
+    expect(j.prenotazioni[0]).toMatchObject({ schedaId: S_ANON, telefono: null, nonContattare: true })
+  })
+
   it('pagina vuota: cursori null e nessuna scheda letta; l’istante di partenza è escluso', async () => {
     h.db.crm_schede.push(scheda())
     h.db.crm_appuntamenti.push(visita())

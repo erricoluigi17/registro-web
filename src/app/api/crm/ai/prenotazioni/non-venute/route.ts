@@ -59,7 +59,7 @@ export const GET = withRoute('crm/ai/prenotazioni/non-venute:GET', async (reques
     const recapito = recapiti.perScheda.get(v.scheda_id)
     return {
       id: v.id, schedaId: v.scheda_id, inizio: v.inizio, segnataIl: v.segnato_il,
-      telefono: recapito?.telefono ?? null, nonContattare: recapito?.nonContattare ?? false,
+      telefono: recapito?.telefono ?? null, nonContattare: recapito?.nonContattare ?? true,
     }
   })
   const ultima = visite.at(-1)

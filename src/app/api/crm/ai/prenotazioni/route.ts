@@ -58,13 +58,14 @@ export const GET = withRoute('crm/ai/prenotazioni:GET', async (request: NextRequ
   const recapiti = await recapitiSchede(supabase, ai.scuolaId, [...new Set(visite.map((v) => v.scheda_id))], op)
   if ('response' in recapiti) return chiudiChiamataAi(ai, recapiti.response)
 
+  const adesso = new Date()
   const prenotazioni = visite.map((v) => {
     const recapito = recapiti.perScheda.get(v.scheda_id)
     return {
       id: v.id, schedaId: v.scheda_id, inizio: v.inizio, fine: v.fine,
-      fissataVia: v.fissato_via, modificabile: visitaModificabile(v, ai.integrazioneId),
+      fissataVia: v.fissato_via, modificabile: visitaModificabile(v, ai.integrazioneId, adesso),
       confermata: v.promemoria_conferma ?? null,
-      telefono: recapito?.telefono ?? null, nonContattare: recapito?.nonContattare ?? false,
+      telefono: recapito?.telefono ?? null, nonContattare: recapito?.nonContattare ?? true,
     }
   })
   return chiudiChiamataAi(ai, NextResponse.json({ sede: ai.scuolaId, giorno, prenotazioni }, { headers: { 'Cache-Control': 'no-store' } }))

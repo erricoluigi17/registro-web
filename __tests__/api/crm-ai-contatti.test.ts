@@ -139,6 +139,12 @@ describe('visitaDi', () => {
     expect(visitaDi([futura, svolta, corrente], ADESSO, INTEGRAZIONE_A)).toEqual(attesa(corrente))
   })
 
+  it('modificabile è falso per una visita dell’AI in programma ma già finita', () => {
+    const mia = { id: 'a', inizio: '2026-11-16T06:30:00Z', stato: 'in_programma' as const, fissato_via: 'ai' as const, integrazione_id: INTEGRAZIONE_A, promemoria_conferma: null }
+    expect(visitaDi([{ ...mia, fine: '2026-11-16T07:15:00Z' }], ADESSO, INTEGRAZIONE_A)?.modificabile).toBe(true)
+    expect(visitaDi([{ ...mia, fine: ADESSO.toISOString() }], ADESSO, INTEGRAZIONE_A)?.modificabile).toBe(false)
+  })
+
   it('dà l’ultima visita passata e ignora le annullate', () => {
     const finita = v('a', '2026-11-16T06:30:00Z', ADESSO.toISOString(), 'in_programma')
     const assente = v('b', '2026-11-15T06:30:00Z', '2026-11-15T07:00:00Z', 'non_presentato')

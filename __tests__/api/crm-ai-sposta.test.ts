@@ -322,13 +322,12 @@ describe('POST /api/crm/ai/prenotazioni/{id}/sposta', () => {
     expect(h.notifica).not.toHaveBeenCalled()
   })
 
-  it('riga di registro ancora aperta: la RPC decide con candidati vuoti', async () => {
+  it('riga di registro ancora aperta: 409 senza chiamare l’rpc', async () => {
     registra(improntaCorpo({ operazione: 'sposta', id: VISITA, sede: SEDE_A, inizio: INIZIO, fine: FINE }), null)
-    h.rpc.mockReturnValueOnce(esito({ esito: 'in_corso' }))
     const r = await chiama()
     expect(r.status).toBe(409)
     expect(await r.json()).toMatchObject({ codice: 'CRM_OPERAZIONE_NON_RIUSCITA' })
-    expect(h.rpc).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ p_candidati: [], p_durata_min: 0 }))
+    expect(h.rpc).not.toHaveBeenCalled()
   })
 
   it.each([

@@ -29,6 +29,7 @@ function db(opz: { fratelloInChiaro?: boolean } = {}): DBFinto {
         id: 'sch-1', scuola_id: SEDE, genitore_nome: 'GENITORE DI PROVA', telefono1: '3330000000', telefono2: null,
         email1: 'prova@example.com', email2: null, telefoni_norm: ['3330000000'], email_norm: ['prova@example.com'],
         routine: 'ROUTINE DI PROVA', paura: 'PAURA DI PROVA', desiderio: 'DESIDERIO DI PROVA',
+        ai_riassunto: 'RIASSUNTO CHE NOMINA IL BAMBINO', ai_aggiornata_il: '2026-10-31T10:00:00Z', ai_stato: 'contattata', non_contattare: true,
         anonimizzata_il: null, aggiornata_il: '2026-10-31T10:00:00Z',
       },
       {
@@ -100,11 +101,14 @@ describe('obliaCrmAlunno — il bambino del CRM, la sua quota in cassa, la sched
     await obliaCrmAlunno(creaFintoSupabase(d), NOSTRO, AT, 'test')
 
     const s = riga(d, 'crm_schede', 'sch-1')
-    for (const campo of ['genitore_nome', 'telefono1', 'email1', 'routine', 'paura', 'desiderio']) {
+    for (const campo of ['genitore_nome', 'telefono1', 'email1', 'routine', 'paura', 'desiderio', 'ai_riassunto', 'ai_aggiornata_il']) {
       expect(s[campo], `${campo} residuo`).toBeNull()
     }
     expect(s.telefoni_norm).toEqual([])
     expect(s.email_norm).toEqual([])
+    // Il rifiuto della famiglia e lo stato si conservano.
+    expect(s.non_contattare).toBe(true)
+    expect(s.ai_stato).toBe('contattata')
     expect(s.anonimizzata_il).toBe(AT)
     expect(riga(d, 'crm_eventi', 'e-3').testo).toBeNull()
     // Gli eventi restano (date, tipi, attribuzioni), e i loro dati sono solo id.

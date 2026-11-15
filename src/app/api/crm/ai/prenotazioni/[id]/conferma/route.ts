@@ -81,7 +81,7 @@ export const POST = withRoute(
     const impronta = improntaCorpo({ operazione: 'conferma', id, sede: ai.scuolaId, confermata })
     const supabase = await createAdminClient()
 
-    const registro = await leggiRichiestaAi(supabase, ai, chiave, 'conferma')
+    const registro = await leggiRichiestaAi(supabase, ai, chiave, op)
     if ('response' in registro) return registro.response
     if (registro.riga) {
       if (registro.riga.impronta !== impronta) {

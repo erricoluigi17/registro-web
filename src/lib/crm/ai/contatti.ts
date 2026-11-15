@@ -35,11 +35,15 @@ interface DettagliScheda {
   bambini: BambinoAi[]
 }
 
-/** Solo la visita fissata da questa stessa chiave, ancora in programma, si può spostare o annullare. */
+/**
+ * Solo la visita fissata da questa stessa chiave, ancora in programma e non ancora finita, si può spostare o annullare
+ * (le funzioni SQL rifiutano una visita con `fine <= clock_timestamp()`).
+ */
 export function visitaModificabile(
-  visita: Pick<AppuntamentoRow, 'fissato_via' | 'integrazione_id' | 'stato'>, integrazioneId: string,
+  visita: Pick<AppuntamentoRow, 'fissato_via' | 'integrazione_id' | 'stato' | 'fine'>, integrazioneId: string, adesso: Date,
 ): boolean {
   return visita.fissato_via === 'ai' && visita.integrazione_id === integrazioneId && visita.stato === 'in_programma'
+    && Date.parse(visita.fine) > adesso.getTime()
 }
 
 /** La prima visita in programma che deve ancora finire, altrimenti l’ultima passata. */
@@ -56,7 +60,7 @@ export function visitaDi(appuntamenti: Appuntamento[], adesso: Date, integrazion
     fine: visita.fine,
     stato: visita.stato,
     fissataVia: visita.fissato_via,
-    modificabile: visitaModificabile(visita, integrazioneId),
+    modificabile: visitaModificabile(visita, integrazioneId, adesso),
     confermata: visita.promemoria_conferma ?? null,
   }
 }
