@@ -182,6 +182,20 @@ describe('scheda Rette', () => {
     expect(within(g).queryByText(/stesso importo dell’anno scorso/)).toBeNull()
   })
 
+  it('con una voce NON retta della stessa fascia in lista: lo stesso importo non spegne l’avviso, uno diverso sì', async () => {
+    const servizio = { voce: 'servizio', fascia: null, payment_category_id: null, importo: 999, mesi: null }
+    lettura = { rette: [servizio, riga(280)] }
+    precedente = [riga(280)]
+    const g = await apriRette()
+    await within(g).findByText(/stesso importo dell’anno scorso/)
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
+    await screen.findByText(itAnno.retteSalvata)
+    expect(within(g).getByText(/stesso importo dell’anno scorso/)).toBeInTheDocument()
+    fireEvent.change(campoImporto(g), { target: { value: '290' } })
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
+    await waitFor(() => expect(within(g).queryByText(/stesso importo dell’anno scorso/)).toBeNull())
+  })
+
   it('un importo non valido si rifiuta senza chiamare il server, e la bozza resta', async () => {
     const g = await apriRette()
     fireEvent.change(campoImporto(g), { target: { value: '0' } })
