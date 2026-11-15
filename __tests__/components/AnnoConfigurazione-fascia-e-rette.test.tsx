@@ -85,7 +85,7 @@ describe('Rette: nessuna classe ha una fascia', () => {
     lettura.rette = [retta(null, 150)]
     const g = await apriRette()
     fireEvent.change(await within(g).findByLabelText(itAnno.etichettaImporto), { target: { value: '300' } })
-    fireEvent.click(within(g).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
     await waitFor(() => expect(puts()).toHaveLength(1))
     expect(corpoPut()).toEqual({ voce: 'retta', fascia: null, importo: 300 })
   })
@@ -106,7 +106,7 @@ describe('Rette: alcune classi hanno una fascia', () => {
     const g = await apriRette()
     expect(await within(g).findAllByRole('listitem')).toHaveLength(2)
     expect(within(g).queryByLabelText(itAnno.etichettaImporto)).toBeNull()
-    expect(within(g).queryByRole('button', { name: itAnno.salva })).toBeNull()
+    expect(within(g).queryByRole('button', { name: itAnno.salvaRetta })).toBeNull()
   })
 
   it('«Modifica» apre il modulo SULLA riga scelta: fascia fissa, importo già dentro, e lo dice', async () => {
@@ -120,7 +120,7 @@ describe('Rette: alcune classi hanno una fascia', () => {
     expect(within(g).getByText('Stai cambiando la retta: Infanzia')).toBeInTheDocument()
     expect(within(g).queryByLabelText(itAnno.etichettaFascia)).toBeNull()
     fireEvent.change(campo, { target: { value: '290' } })
-    fireEvent.click(within(g).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
     await waitFor(() => expect(puts()).toHaveLength(1))
     expect(corpoPut()).toEqual({ voce: 'retta', fascia: 'infanzia', importo: 290 })
   })
@@ -166,7 +166,7 @@ describe('Rette: alcune classi hanno una fascia', () => {
     const g = await apriRette()
     const righe = await within(g).findAllByRole('listitem')
     fireEvent.click(within(righe[1]).getByRole('button', { name: itAnno.modifica }))
-    fireEvent.click(within(g).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
     await waitFor(() => expect(within(g).queryByLabelText(itAnno.etichettaImporto)).toBeNull())
   })
 })

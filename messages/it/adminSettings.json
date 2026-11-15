@@ -518,5 +518,7 @@
   "annoMancaClassiSenzaFascia": "la fascia di ogni classe (nel blocco «Classi dell’anno» più in basso in questa pagina: premi «Copia le classi dell’anno in corso» e scegli la fascia)",
   "spRettaDefaultNota": "La retta non si decide più qui: sta nel listino dell’anno scolastico, per fascia e con i mesi in cui si genera.",
   "spRettaDefaultAttuale": "Retta di base dell’anno in corso: {importo}",
-  "spRettaDefaultLink": "Vai ad Anno scolastico → Rette"
+  "spRettaDefaultLink": "Vai ad Anno scolastico → Rette",
+  "annoSalvaFine": "Salva la fine dell’anno",
+  "annoSalvaDate": "Salva le date"
 }

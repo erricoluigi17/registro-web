@@ -145,13 +145,18 @@ export function costruisciTappe(anno: AnnoDaPreparare, letture: LettureAnno, ogg
   ];
 }
 
-/** Dove porta ogni tappa (senza `userId`: lo aggiunge la pagina). Gli indirizzi sono quelli del menu. */
+/**
+ * Dove porta ogni tappa (senza `userId`: lo aggiunge la pagina). Gli indirizzi sono quelli del menu.
+ * Le tre tappe delle Impostazioni portano alla STESSA pagina ma dicono con `tappa=` quale scheda aprire e a quale blocco
+ * scorrere (`quote` → scheda «Quote», `documenti` → scheda «Documenti», `iscrizioni` → il blocco «Apri le iscrizioni»):
+ * senza, la pagina si apriva in cima e la segretaria doveva trovare da sola la scheda.
+ */
 export function hrefTappa(id: IdTappa, anno: { annoSedeId: string }): string {
   switch (id) {
     case 'quote':
     case 'documenti':
     case 'iscrizioni':
-      return `/admin/impostazioni?sezione=anno&anno_sede=${anno.annoSedeId}`;
+      return `/admin/impostazioni?sezione=anno&anno_sede=${anno.annoSedeId}&tappa=${id}`;
     case 'conferme':
       return '/admin/students/conferme';
     case 'puntoSituazione':

@@ -24,9 +24,9 @@
  */
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import Link, { useLinkStatus } from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
-import { ArrowRight, CalendarCheck } from 'lucide-react';
+import { ArrowRight, CalendarCheck, Loader2 } from 'lucide-react';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { useSediAttive } from '@/lib/context/sede-context';
 import { useCalendario } from '@/lib/context/calendario-context';
@@ -96,6 +96,29 @@ async function leggi(url: string, userId: string, operazione: string): Promise<R
     logClient({ livello: 'warn', evento: 'fetch', messaggio: `${operazione} — ${nomeErrore(err)}` });
     return null;
   }
+}
+
+/**
+ * Il segno che il clic è arrivato. Sta DENTRO il `Link` perché `useLinkStatus` legge lo stato del suo Link: finché la pagina
+ * di arrivo non è pronta (2-3 secondi) dice «Un attimo…» e mette `aria-busy`, così nessuno clicca due volte pensando che sia
+ * rotto. Al posto della freccia gira una rotellina; il riquadro della riga si colora da solo (`has-[…]` sul Link).
+ * Niente `loading.tsx` alla radice di `app/`: ha già rotto l'hydration.
+ */
+function SegnoCaricamento() {
+  const t = useTranslations('adminNav');
+  const { pending } = useLinkStatus();
+  return (
+    <span className="flex items-center gap-1.5" data-pending={pending ? 'true' : undefined} aria-busy={pending}>
+      <span role="status" className={pending ? 'font-maven text-xs font-semibold text-kidville-green' : 'sr-only'}>
+        {pending ? t('preparaCaricamento') : ''}
+      </span>
+      {pending ? (
+        <Loader2 size={16} aria-hidden="true" className="animate-spin text-kidville-green motion-reduce:animate-none" />
+      ) : (
+        <ArrowRight size={16} aria-hidden="true" className="text-kidville-neutral/60 transition-all group-hover:translate-x-1 group-hover:text-kidville-green" />
+      )}
+    </span>
+  );
 }
 
 const numero = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
@@ -225,7 +248,7 @@ function Scheda({ anno, userId, withUser }: { anno: AnnoDaPreparare; userId: str
                 onClick={() => {
                   if (DIPENDONO_DAL_SELETTORE.has(tp.id) && annoCtx && annoCtx.selezionato !== anno.annoId) annoCtx.scegli(anno.annoId);
                 }}
-                className="group flex min-h-[48px] items-start gap-3 rounded-xl px-1 py-3 hover:bg-kidville-cream focus-visible:outline focus-visible:outline-2 focus-visible:outline-kidville-green"
+                className="group flex min-h-[48px] items-start gap-3 rounded-xl px-1 py-3 hover:bg-kidville-cream has-[[data-pending=true]]:bg-kidville-green-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-kidville-green"
               >
                 <span
                   aria-hidden="true"
@@ -241,7 +264,7 @@ function Scheda({ anno, userId, withUser }: { anno: AnnoDaPreparare; userId: str
                   <Badge tone={inAttesaDiLettura ? TONO.caricamento : TONO[tp.stato]}>
                     {inAttesaDiLettura ? t('caricamento') : t(CHIAVE_STATO[tp.stato])}
                   </Badge>
-                  <ArrowRight size={16} aria-hidden="true" className="text-kidville-neutral/60 transition-all group-hover:translate-x-1 group-hover:text-kidville-green" />
+                  <SegnoCaricamento />
                 </span>
               </Link>
             </li>

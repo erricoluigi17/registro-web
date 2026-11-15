@@ -126,5 +126,6 @@
   "preparaPassaggioSenzaData": "The date is worked out from the last day of the current year.",
   "preparaVai": "Open",
   "preparaVaiAria": "Open: {tappa}",
-  "sedeUnicaAria": "Location you are working on"
+  "sedeUnicaAria": "Location you are working on",
+  "preparaCaricamento": "One moment…"
 }
