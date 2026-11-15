@@ -178,7 +178,7 @@ test.describe('import in segreteria @solo-chromium', () => {
     // romperebbe in silenzio — compilando il campo sbagliato.
     await page.locator('#ricevuti-retta-0').fill('300');
 
-    await page.getByRole('button', { name: 'Importa nelle anagrafiche' }).click();
+    await page.getByRole('button', { name: 'Accogli la domanda' }).click();
 
     // Esito: import ok + credenziali + degrado email (RESEND non configurato).
     await expect(page.getByText('Iscrizione importata')).toBeVisible({ timeout: 20_000 });

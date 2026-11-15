@@ -6,7 +6,7 @@ import enAdminAltro from '../../messages/en/adminAltro.json'
 import type { RigaCalendario } from '@/lib/anno-scolastico'
 
 /**
- * Lotto E1 — «Importa nelle anagrafiche» non può restare senza effetto.
+ * Lotto E1 — «Accogli la domanda» non può restare senza effetto.
  *
  * La prova di usabilità sulla sede Demo: domanda dell'anno 2027/28 (iscrizioni aperte), classe scelta, retta vuota,
  * clic su «Importa»: nessun messaggio, nessun cambiamento. Il server rispondeva 400 `RETTA_MANCANTE` e la pagina lo
@@ -151,6 +151,30 @@ describe('ModuliRicevuti — l\'import non parte mai in silenzio', () => {
     await apriEScegliClasse('Ada Verdi')
     const campo = screen.getByLabelText(itAdminAltro.ricevutiRettaMensile) as HTMLInputElement
     expect(campo.placeholder).toBe(itAdminAltro.ricevutiRettaPlaceholderListino)
+  })
+
+  it('terzo giro (15/11): il pulsante dice «Accogli la domanda» e sotto spiega cosa succede', async () => {
+    render(<ModuliRicevuti />)
+    await apriEScegliClasse('Ada Verdi')
+    const b = screen.getByRole('button', { name: 'Accogli la domanda' })
+    expect(b).toBeInTheDocument()
+    expect(screen.queryByText(/Importa nelle anagrafiche/)).toBeNull()
+    expect(screen.getByText('Il bambino entra nelle anagrafiche e la famiglia riceve le credenziali.')).toBeInTheDocument()
+    expect(b).toHaveAccessibleDescription('Il bambino entra nelle anagrafiche e la famiglia riceve le credenziali.')
+  })
+
+  it('terzo giro: retta vuota, anno prossimo: il campo dice quale retta varrà (quella dell\'anno, con l\'anno vero)', async () => {
+    render(<ModuliRicevuti />)
+    await apriEScegliClasse('Ada Verdi')
+    expect(screen.getByText('Vuoto = la retta impostata in Impostazioni › Anno scolastico per il 2027/28')).toBeInTheDocument()
+  })
+
+  it('terzo giro: nessun «Importa nelle anagrafiche» nei testi dei due cataloghi', () => {
+    expect(JSON.stringify(itAdminAltro)).not.toContain('Importa nelle anagrafiche')
+    expect(itAdminAltro).toHaveProperty('ricevutiImportaDesc')
+    expect(enAdminAltro).toHaveProperty('ricevutiImportaDesc')
+    expect(itAdminAltro).toHaveProperty('ricevutiRettaVuotaAnno')
+    expect(enAdminAltro).toHaveProperty('ricevutiRettaVuotaAnno')
   })
 
   it('il server rifiuta (400 RETTA_MANCANTE): il messaggio compare nella pagina, non in un alert del browser', async () => {

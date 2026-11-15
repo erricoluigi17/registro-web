@@ -172,18 +172,19 @@ export function ModuliInviabili() {
             <button onClick={resetStandard} disabled={resetting} className="inline-flex items-center gap-1.5 rounded-pill border border-kidville-warn/30 px-3 py-1.5 text-sm text-kidville-warn disabled:opacity-50">
               {resetting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} {t('inviabiliReimposta')}
             </button>
-            <button onClick={() => copyLink(`${origin}/iscrizione`, 'std')} className="inline-flex items-center gap-1.5 rounded-pill border border-kidville-green/30 px-3 py-1.5 text-sm text-kidville-green">
-              {copied === 'std' ? <><CheckCircle2 size={14} /> {t('inviabiliCopiato')}</> : <><Copy size={14} /> {t('inviabiliCopiaLink')}</>}
-            </button>
-            {/* Il link della SEDE si aggiunge a quello unico, non lo sostituisce. Sta solo con una sede in vista:
+            {/* Il link della SEDE è il principale e viene per primo (terzo giro, 15/11: «scegliere quello sbagliato manda la famiglia su un modulo
+                dove può scegliere altre scuole»). Sta solo con una sede in vista:
                 con più sedi il link «di una» non esiste. La sede di prova non è nell'elenco pubblico, ma questo link ci arriva. */}
             {sedeCorrente && (
-              <button onClick={() => copyLink(`${origin}/iscrizione?scuola=${sedeCorrente}`, 'std-sede')} className="inline-flex items-center gap-1.5 rounded-pill border border-kidville-green/30 px-3 py-1.5 text-sm text-kidville-green">
+              <button onClick={() => copyLink(`${origin}/iscrizione?scuola=${sedeCorrente}`, 'std-sede')} className="inline-flex items-center gap-1.5 rounded-pill bg-kidville-green px-3 py-1.5 text-sm font-semibold text-kidville-yellow">
                 {copied === 'std-sede'
                   ? <><CheckCircle2 size={14} /> {t('inviabiliCopiato')}</>
                   : <><Copy size={14} /> {nomeSedeCorrente ? t('inviabiliCopiaLinkSede', { nome: nomeSedeCorrente }) : t('inviabiliCopiaLinkSedeSenzaNome')}</>}
               </button>
             )}
+            <button onClick={() => copyLink(`${origin}/iscrizione`, 'std')} className="inline-flex items-center gap-1.5 rounded-pill border border-kidville-green/30 px-3 py-1.5 text-sm text-kidville-green">
+              {copied === 'std' ? <><CheckCircle2 size={14} /> {t('inviabiliCopiato')}</> : <><Copy size={14} /> {t('inviabiliCopiaLinkTutte')}</>}
+            </button>
           </div>
         </div>
         {indirizzoStd && (
