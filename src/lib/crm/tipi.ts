@@ -439,3 +439,12 @@ export type EsitoAggiornaSchedaAi =
 export type EsitoConfermaAi =
   | { esito: 'registrata'; appuntamento_id: string; scheda_id: string; confermata: boolean; ripetuta?: true }
   | { esito: 'non_trovato' | 'stato_non_ammesso' | 'chiave_riusata' | 'in_corso' | 'token_non_valido' }
+
+/**
+ * Quello che `crm_ai_sposta` restituisce. `invariata` è lo stesso inizio con la stessa durata: niente scritto.
+ * `assegnata_prima` è la persona che aveva la visita prima dello spostamento.
+ */
+export type EsitoSpostaAi =
+  | { esito: 'spostata'; appuntamento_id: string; inizio: string; fine: string; scheda_id: string; assegnata_a: string; assegnata_prima: string; ripetuta?: true }
+  | { esito: 'invariata'; appuntamento_id: string; inizio: string; fine: string; scheda_id: string; assegnata_a: string; ripetuta?: true }
+  | { esito: 'non_trovato' | 'stato_non_ammesso' | 'fuori_disponibilita' | 'slot_occupato' | 'chiave_riusata' | 'in_corso' | 'token_non_valido' }
