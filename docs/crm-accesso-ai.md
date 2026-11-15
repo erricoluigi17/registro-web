@@ -1,6 +1,6 @@
 # Accesso dell’assistente al CRM Kidville
 
-Il programma sul Mac può cercare orari per una visita, fissarla o annullarla, registrare e riconoscere un contatto e passare una famiglia alla segreteria. Le dodici API sono sotto `/api/crm/ai`. Le prime sette sono descritte qui sotto; le cinque della vendita (spostare una visita, aggiornare la scheda, confermare il promemoria, appuntamenti del giorno, visite non venute) e la tabella «metodo del motore → porta» sono in [le porte del CRM per la vendita](crm-ai-porte.md), che descrive anche la nuova forma di E2.
+Il programma sul Mac può cercare orari per una visita, fissarla o annullarla, registrare e riconoscere un contatto e passare una famiglia alla segreteria. Le dodici API sono sotto `/api/crm/ai`. Le prime sette sono descritte qui sotto; le cinque della vendita (spostare una visita, aggiornare la scheda, confermare il promemoria, appuntamenti del giorno, visite non venute) e la tabella «metodo del protocollo `Crm` → porta» sono in [le porte del CRM per la vendita](crm-ai-porte.md), che descrive anche la nuova forma di E2.
 
 L’accesso parte spento. Sul server `CRM_AI_ATTIVO=1` accende le API. `CRM_AI_SEDI_AMMESSE` contiene gli UUID delle sedi ammesse, separati da virgole. Un elenco vuoto non ammette alcuna sede. Le sedi vere stanno in `CRM_AI_SEDI_VERE` e entrano solo se anche `CRM_AI_VERO=1` (spento di default): vedi «Ambiente vero» in [le porte del CRM per la vendita](crm-ai-porte.md). Il primo collaudo, dopo il sì del titolare, è previsto per la sola sede Demo.
 

@@ -8,6 +8,8 @@ Negli esempi `BASE_URL` è l’origine HTTPS autorizzata e `CRM_AI_TOKEN` contie
 
 La migrazione `supabase/migrations/20261115183417_crm_porte_vendita.sql` aggiunge le colonne della vendita sulla scheda e sulla visita e le funzioni SQL delle porte nuove. Non è applicata: fino al merge e alla sua applicazione le porte nuove rispondono `503 CRM_NON_INSTALLATO`. Le porte nuove sono `sposta`, `aggiorna`, `conferma`, gli appuntamenti del giorno e `non-venute`. La porta `contatti/stato` cambia forma (vedi la sezione 5) e legge le colonne nuove, quindi risponde anch’essa `503` finché la migrazione manca. Le porte `slot`, `prenota`, annulla e `richiami` funzionano come prima. `contatti` e `contatti/nuovi` funzionano come prima solo quando non devono leggere visite o schede già presenti (elenco vuoto, scheda appena creata); altrimenti leggono colonne della migrazione e rispondono `503 CRM_NON_INSTALLATO`. Applicarla lo decide Luigi.
 
+**Ordine di pubblicazione.** Il codice si pubblica solo con la migrazione già applicata. Se va online prima, le letture che toccano le colonne nuove (E1, E2 e E3 della scheda, dei contatti e delle visite) rispondono `503 CRM_NON_INSTALLATO`, e lo spostamento di una visita dalla segreteria (che azzera la conferma del promemoria) dà errore. L’ordine è: applicare la migrazione, poi pubblicare il codice.
+
 L’interruttore resta spento: senza `CRM_AI_ATTIVO=1` ogni porta risponde `404 CRM_AI_SPENTO` e non tocca il database.
 
 ## Regole che valgono per tutte le porte
@@ -40,16 +42,21 @@ Per ripetere lo stesso tentativo dopo un timeout si riusa la stessa chiave; per 
 
 | Metodo del protocollo `Crm` | Porta | Sezione |
 |---|---|---|
-| `orari(sede, nascita, adesso)` | `GET /api/crm/ai/slot` | 1 |
+| `orari(sede, nascita, adesso)` | `GET /api/crm/ai/slot` (con `nascita` mancante la porta non si può chiamare: la nascita è obbligatoria) | 1 |
 | `esegui(azione prenota)` | `POST /api/crm/ai/prenota` | 2 |
 | `esegui(azione sposta)` | `POST /api/crm/ai/prenotazioni/{id}/sposta` | 3 |
 | `esegui(azione annulla)` | `DELETE /api/crm/ai/prenotazioni/{id}` | 4 |
 | `scheda(telefono)` | `POST /api/crm/ai/contatti/stato` | 5 |
 | `esegui(azione aggiorna_scheda)` | `POST /api/crm/ai/contatti/aggiorna` | 6 |
 | `esegui(azione non_contattare)` | `POST /api/crm/ai/contatti/aggiorna` con `nonContattare: true` | 6 |
-| conferma del promemoria (risposta della famiglia) | `POST /api/crm/ai/prenotazioni/{id}/conferma` | 7 |
 | `domani(adesso)` | `GET /api/crm/ai/prenotazioni?giorno=` | 8 |
 | `non_venute(dopo)` | `GET /api/crm/ai/prenotazioni/non-venute` | 9 |
+
+Porte senza un metodo del protocollo `Crm`: le usa il motore per altri compiti, non passano dal protocollo.
+
+| Compito del motore (nessun metodo del protocollo) | Porta | Sezione |
+|---|---|---|
+| conferma del promemoria (risposta della famiglia) | `POST /api/crm/ai/prenotazioni/{id}/conferma` | 7 |
 | nuovo contatto da sito o telefonata | `POST /api/crm/ai/contatti` | 10 |
 | nuovi contatti della segreteria | `GET /api/crm/ai/contatti/nuovi` | 11 |
 | passaggio a una persona (stato `a_una_persona`) | `POST /api/crm/ai/richiami` | 12 |
@@ -96,6 +103,10 @@ Con `Idempotency-Key`. L’UUID della visita sta nell’indirizzo. Corpo: `sede`
 
 **200** — `{id, inizio, fine, schedaId, invariata, ripetuta}`. `invariata: true` se l’orario chiesto è quello che la visita ha già (nessuna scrittura, nessun avviso).
 
+**La conferma si azzera.** Dopo uno spostamento `confermata` torna `null`: il promemoria va ripetuto per il nuovo orario. Vale anche quando a spostare la visita è la segreteria dal CRM.
+
+**L’agenda si controlla prima della funzione SQL.** La route verifica la coppia `inizio`–`fine` sulle disponibilità prima di chiamare il database. Quindi lo stesso orario di prima, se la coppia è a meno di due ore da adesso o fuori griglia, dà `422 FUORI_DISPONIBILITA` e non `invariata`; e una visita inesistente o della segreteria su un orario fuori griglia dà `422` invece di `404`.
+
 | HTTP | Codice | Quando |
 |---|---|---|
 | 404 | `ELEMENTO_NON_TROVATO` | Visita non trovata per quella sede e chiave (anche se fissata dalla segreteria). |
@@ -127,7 +138,7 @@ Corpo `sede`, `telefono`. Non scrive. **200**:
 - se la famiglia c’è: `{esiste: true, schedaId, creatoVia, stato, nonContattare, visita, bambini}`;
 - se non c’è: `{esiste: false, schedaId: null, creatoVia: null, stato: null, nonContattare: false, visita: null, bambini: []}`.
 
-`creatoVia` è `segreteria` o `ai`. `stato` è uno dei valori del vocabolario sotto, oppure `null` se l’assistente non ne ha ancora scritto uno. `nonContattare` è `true` se la famiglia ha chiesto di non essere contattata: il motore non le scrive. `visita` è `null` oppure `{id, inizio, fine, stato, fissataVia, modificabile, confermata}`: `stato` è `in_programma`, `svolto` o `non_presentato`; `fissataVia` è `segreteria` o `ai`; `modificabile` è `true` solo per una visita fissata da questa stessa chiave e ancora in programma (le sole su cui `sposta` e annulla possono agire); `confermata` è la risposta al promemoria (`true`, `false`, o `null` se non c’è). `bambini` è `[{id, nascita, esito}]` con `nascita` in `AAAA-MM` o `null`.
+`creatoVia` è `segreteria` o `ai`. `stato` è uno dei valori del vocabolario sotto, oppure `null` se l’assistente non ne ha ancora scritto uno. `nonContattare` è `true` se la famiglia ha chiesto di non essere contattata: il motore non le scrive. `visita` è `null` oppure `{id, inizio, fine, stato, fissataVia, modificabile, confermata}`: `stato` è `in_programma`, `svolto` o `non_presentato`; `fissataVia` è `segreteria` o `ai`; `modificabile` è `true` solo per una visita fissata da questa stessa chiave, ancora in programma e non ancora finita (le sole su cui `sposta` e annulla possono agire: una visita in programma ma già finita ha `modificabile: false`); `confermata` è la risposta al promemoria (`true`, `false`, o `null` se non c’è). `bambini` è `[{id, nascita, esito}]` con `nascita` in `AAAA-MM` o `null`.
 
 Vocabolario di `stato`, nello stesso ordine di `STATI` del motore: `nuova`, `contattata`, `in_conversazione`, `appuntamento`, `confermato`, `venuta`, `non_venuta`, `non_risponde`, `non_interessata`, `non_contattare`, `a_una_persona`.
 
@@ -143,7 +154,9 @@ curl -X POST "$BASE_URL/api/crm/ai/contatti/stato" \
 
 Con `Idempotency-Key`. Corpo: `sede`; la scheda per `schedaId` **oppure** per `telefono` (uno solo dei due); almeno uno fra `stato` (uno del vocabolario), `riassunto` (testo fino a 4.000 caratteri; una stringa vuota o di soli spazi lo cancella) e `nonContattare` (solo `true`: toglierlo lo fa una persona, non l’assistente). Un campo non ammesso dà `400`.
 
-**200** — `{schedaId, stato, nonContattare, ripetuta}`. Il riassunto non torna indietro in nessuna risposta e non entra nei log né nello storico.
+**Stato e rifiuto sono indipendenti.** Scrivere `stato: "non_contattare"` non registra il rifiuto: il rifiuto si registra solo con `nonContattare: true`. Per una famiglia che chiede di non essere più contattata il motore manda entrambi.
+
+**200** — `{schedaId, stato, nonContattare, ripetuta}`. `stato` può essere `null` (scheda su cui l’assistente non ha mai scritto uno stato, per esempio dopo il solo riassunto). Il riassunto non torna indietro in nessuna risposta e non entra nei log né nello storico.
 
 | HTTP | Codice | Quando |
 |---|---|---|
@@ -175,7 +188,7 @@ curl -X POST "$BASE_URL/api/crm/ai/prenotazioni/<uuid della visita>/conferma" \
 
 Query `sede`, `giorno` (`AAAA-MM-GG`, giorno civile di Roma). Sono le visite in programma che iniziano quel giorno, in ordine di orario. Con `Cache-Control: no-store`.
 
-**200** — `{sede, giorno, prenotazioni: [{id, schedaId, inizio, fine, fissataVia, modificabile, confermata, telefono, nonContattare}]}`. `telefono` è il primo recapito normalizzato o `null`. Le due forme di `modificabile` e `confermata` sono quelle della sezione 5. Il motore salta le famiglie con `nonContattare: true`. Se i risultati raggiungono il tetto tecnico di 1.000 righe la risposta è `500` e non una lista incompleta.
+**200** — `{sede, giorno, prenotazioni: [{id, schedaId, inizio, fine, fissataVia, modificabile, confermata, telefono, nonContattare}]}`. `telefono` è il primo recapito normalizzato o `null`; con la scheda non trovata `telefono` è `null` e `nonContattare` è `true`. Le due forme di `modificabile` e `confermata` sono quelle della sezione 5. Il motore salta le famiglie con `nonContattare: true`. Se i risultati raggiungono il tetto tecnico di 1.000 righe la risposta è `500` e non una lista incompleta.
 
 ```sh
 curl --get "$BASE_URL/api/crm/ai/prenotazioni" \
@@ -187,7 +200,7 @@ curl --get "$BASE_URL/api/crm/ai/prenotazioni" \
 
 Query `sede`, `dopo` (istante ISO con fuso), `dopoId` facoltativo. Elenca, fino a 100 per pagina, le visite segnate «non presentato» dopo quell’istante, in ordine di `segnataIl` e poi di `id`. Con `Cache-Control: no-store`.
 
-**200** — `{prenotazioni: [{id, schedaId, inizio, segnataIl, telefono, nonContattare}], prossimoDopo, prossimoDopoId}`. Come per i contatti nuovi: dopo ogni pagina si salvano **entrambi** `prossimoDopo` e `prossimoDopoId` e si mandano alla chiamata dopo; la stringa dell’istante si conserva intera, con offset e microsecondi, e si codifica con `--data-urlencode` perché il `+` non diventi uno spazio. A pagina vuota i due cursori sono `null`: si tiene l’ultimo cursore valido.
+**200** — `{prenotazioni: [{id, schedaId, inizio, segnataIl, telefono, nonContattare}], prossimoDopo, prossimoDopoId}`. `telefono` può essere `null` (scheda anonimizzata o non trovata); con la scheda non trovata `nonContattare` è `true`, perché nel dubbio non si scrive. Come per i contatti nuovi: dopo ogni pagina si salvano **entrambi** `prossimoDopo` e `prossimoDopoId` e si mandano alla chiamata dopo; la stringa dell’istante si conserva intera, con offset e microsecondi, e si codifica con `--data-urlencode` perché il `+` non diventi uno spazio. A pagina vuota i due cursori sono `null`: si tiene l’ultimo cursore valido.
 
 ```sh
 curl --get "$BASE_URL/api/crm/ai/prenotazioni/non-venute" \
@@ -217,13 +230,17 @@ curl --get "$BASE_URL/api/crm/ai/contatti/nuovi" \
 
 ## 12. Passare alla segreteria — POST /api/crm/ai/richiami
 
-Corpo `sede`, `motivo`, e `schedaId` oppure `telefono` con `origine`. **201** — `{azioneId, schedaId, creata: true}`; **200** con `creata: false` se il richiamo era già aperto. Errori propri: `404 SCHEDA_NON_TROVATA`, `409 NESSUN_RESPONSABILE`, `422 CONTATTO_OBBLIGATORIO`. Dettagli in [accesso](crm-accesso-ai.md), sezione 7. Dopo un passaggio il motore scrive anche lo stato `a_una_persona` con la porta della sezione 6.
+Corpo `sede`, `motivo`, e `schedaId` oppure `telefono` con `origine` e, facoltativo, `genitoreNome`. **201** — `{azioneId, schedaId, creata: true}`; **200** con `creata: false` se il richiamo era già aperto. Errori propri: `404 SCHEDA_NON_TROVATA`, `409 NESSUN_RESPONSABILE`, `422 CONTATTO_OBBLIGATORIO`. Dettagli in [accesso](crm-accesso-ai.md), sezione 7. Dopo un passaggio il motore scrive anche lo stato `a_una_persona` con la porta della sezione 6.
 
 ```sh
 curl -X POST "$BASE_URL/api/crm/ai/richiami" \
   -H "Authorization: Bearer $CRM_AI_TOKEN" -H 'Content-Type: application/json' \
   --data '{"sede":"<uuid della sede>","telefono":"333 000 0001","origine":"whatsapp","motivo":"chiede_persona"}'
 ```
+
+## Prima di accendere `CRM_AI_VERO`
+
+Serve una schermata della segreteria che mostri e permetta di togliere `non_contattare`, e che mostri stato, riassunto e conferma del promemoria. Oggi nessuna schermata li mostra: l’assistente può accendere il rifiuto, ma una persona non può né vederlo né spegnerlo. Senza quella schermata `CRM_AI_VERO` resta spento.
 
 ## Ambiente vero
 
