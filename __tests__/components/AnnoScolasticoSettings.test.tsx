@@ -141,7 +141,9 @@ function scegli(etichettaBreve: string) {
   fireEvent.click(within(elenco).getByRole('button', { name: new RegExp(`^${etichettaBreve}`) }))
 }
 const gruppo = (nome: string) => screen.getByRole('group', { name: nome })
-const salvaDi = (nome: string) => within(gruppo(nome)).getByRole('button', { name: itSettings.salva })
+// Ogni «Salva» dice cosa salva: la fine dell'anno e le date hanno ciascuna il suo.
+const testoSalva = (nome: string) => (nome === itSettings.annoFineTitolo ? itSettings.annoSalvaFine : itSettings.annoSalvaDate)
+const salvaDi = (nome: string) => within(gruppo(nome)).getByRole('button', { name: testoSalva(nome) })
 
 describe('Impostazioni → Anno scolastico: l’elenco', () => {
   it('una riga per anno: etichetta, stato in parole, inizio e fine', async () => {
@@ -298,7 +300,7 @@ describe('Impostazioni → Anno scolastico: la fine dell’anno (il confine)', (
     const campo = (await screen.findByLabelText(itSettings.annoFineTitolo)) as HTMLInputElement
     expect(campo).toBeDisabled()
     expect(screen.getByText(itSettings.annoFineSenzaSuccessivo)).toBeInTheDocument()
-    expect(within(gruppo(itSettings.annoFineTitolo)).queryByRole('button', { name: itSettings.salva })).toBeNull()
+    expect(within(gruppo(itSettings.annoFineTitolo)).queryByRole('button', { name: itSettings.annoSalvaFine })).toBeNull()
   })
 
   it('un campo svuotato non parte: si chiede una data', async () => {
@@ -654,7 +656,8 @@ describe('Impostazioni → Anno scolastico: un anno chiuso è in sola lettura', 
     // Dell'anno chiuso resta la sola lettura delle rette: nessun campo e nessun pulsante di scrittura (non c'è niente da scrivere).
     expect(await screen.findByText(itAnno.retteSolaLettura)).toBeInTheDocument()
     expect(document.querySelectorAll('input, select')).toHaveLength(0)
-    expect(screen.queryByRole('button', { name: itSettings.salva })).toBeNull()
+    expect(screen.queryByRole('button', { name: itSettings.annoSalvaFine })).toBeNull()
+    expect(screen.queryByRole('button', { name: itSettings.annoSalvaDate })).toBeNull()
   })
 })
 
@@ -828,7 +831,7 @@ describe('Impostazioni → Anno scolastico: quote, moduli, posti e classi (4.5.3
     const quota = await screen.findByRole('group', { name: itAnno.quotaConfermaTitolo })
     const campo = within(quota).getByLabelText(itAnno.etichettaImporto) as HTMLInputElement
     fireEvent.change(campo, { target: { value: '0' } })
-    fireEvent.click(within(quota).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(quota).getByRole('button', { name: itAnno.salvaQuotaConferma }))
     expect(await within(quota).findByRole('alert')).toHaveTextContent(itAnno.importoNonValido)
     expect(campo.value).toBe('0')
     expect(chiamate('PUT')).toHaveLength(0)
@@ -840,7 +843,7 @@ describe('Impostazioni → Anno scolastico: quote, moduli, posti e classi (4.5.3
     const prima = chiamate('GET').filter(([u]) => String(u) === ANNO).length
     const quota = await screen.findByRole('group', { name: itAnno.quotaNuovaTitolo })
     fireEvent.change(within(quota).getByLabelText(itAnno.etichettaImporto), { target: { value: '120,50' } })
-    fireEvent.click(within(quota).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(quota).getByRole('button', { name: itAnno.salvaQuotaNuova }))
     await waitFor(() => expect(chiamate('PUT')).toHaveLength(1))
     const c = ultima('PUT')!
     expect(c.url).toBe(`${ANNO}/quote`)
@@ -867,7 +870,7 @@ describe('Impostazioni → Anno scolastico: quote, moduli, posti e classi (4.5.3
     const quota = await screen.findByRole('group', { name: itAnno.quotaConfermaTitolo })
     const campo = within(quota).getByLabelText(itAnno.etichettaImporto) as HTMLInputElement
     fireEvent.change(campo, { target: { value: '90' } })
-    fireEvent.click(within(quota).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(quota).getByRole('button', { name: itAnno.salvaQuotaConferma }))
     expect(await within(quota).findByRole('alert')).toBeInTheDocument()
     expect(campo.value).toBe('90')
   })

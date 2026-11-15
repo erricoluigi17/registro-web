@@ -90,6 +90,28 @@ describe('scheda Rette', () => {
     expect(within(g).queryByRole('alert')).toBeNull()
   })
 
+  it('l’importo copiato porta un AVVISO ben visibile, vicino al campo, non una nota grigia', async () => {
+    lettura = { rette: [{ voce: 'retta', fascia: null, payment_category_id: null, importo: 150, mesi: null }] }
+    const g = await apriRette()
+    const avviso = within(g).getByText(itAnno.retteCopiata).closest('[data-avviso="retta-copiata"]') as HTMLElement
+    expect(avviso).not.toBeNull()
+    expect(avviso).toHaveAttribute('role', 'note')
+    expect(avviso.className).toMatch(/kidville-warn/)
+    // Sta sopra il campo dell’importo, nello stesso gruppo: si legge prima di scrivere.
+    const campo = campoImporto(g)
+    expect(avviso.compareDocumentPosition(campo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('l’avviso sparisce dopo il salvataggio dell’importo per l’anno nuovo', async () => {
+    lettura = { rette: [{ voce: 'retta', fascia: null, payment_category_id: null, importo: 150, mesi: null }] }
+    const g = await apriRette()
+    expect(within(g).getByText(itAnno.retteCopiata)).toBeInTheDocument()
+    fireEvent.change(campoImporto(g), { target: { value: '180' } })
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
+    await screen.findByText(itAnno.retteSalvata)
+    expect(within(g).queryByText(itAnno.retteCopiata)).toBeNull()
+  })
+
   it('un importo diverso da 150 non porta la nota', async () => {
     lettura = { rette: [{ voce: 'retta', fascia: null, payment_category_id: null, importo: 275, mesi: null }] }
     const g = await apriRette()
@@ -99,7 +121,7 @@ describe('scheda Rette', () => {
   it('un importo non valido si rifiuta senza chiamare il server, e la bozza resta', async () => {
     const g = await apriRette()
     fireEvent.change(campoImporto(g), { target: { value: '0' } })
-    fireEvent.click(within(g).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
     expect(await within(g).findByRole('alert')).toHaveTextContent(itAnno.importoNonValido)
     expect(campoImporto(g).value).toBe('0')
     expect(puts()).toHaveLength(0)
@@ -108,7 +130,7 @@ describe('scheda Rette', () => {
   it('salva un NUMERO (la virgola vale il punto) senza toccare i mesi se non sono cambiati', async () => {
     const g = await apriRette()
     fireEvent.change(campoImporto(g), { target: { value: '312,50' } })
-    fireEvent.click(within(g).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
     await waitFor(() => expect(puts()).toHaveLength(1))
     expect(String(puts()[0][0])).toBe(`/api/admin/anni/${ANNO}/rette`)
     expect(corpoPut()).toEqual({ voce: 'retta', fascia: null, importo: 312.5 })
@@ -120,7 +142,7 @@ describe('scheda Rette', () => {
     fireEvent.click(within(g).getByRole('checkbox', { name: /giugno/i }))
     fireEvent.click(within(g).getByRole('checkbox', { name: /luglio/i }))
     fireEvent.change(campoImporto(g), { target: { value: '200' } })
-    fireEvent.click(within(g).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
     await waitFor(() => expect(puts()).toHaveLength(1))
     expect(corpoPut()).toEqual({ voce: 'retta', fascia: null, importo: 200, mesi: [1, 2, 3, 4, 5, 7, 9, 10, 11, 12] })
   })
@@ -129,7 +151,7 @@ describe('scheda Rette', () => {
     const g = await apriRette()
     for (const c of within(g).getAllByRole('checkbox')) if ((c as HTMLInputElement).checked) fireEvent.click(c)
     fireEvent.change(campoImporto(g), { target: { value: '200' } })
-    fireEvent.click(within(g).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
     expect(await within(g).findByRole('alert')).toHaveTextContent(itAnno.retteMesiVuoti)
     expect(puts()).toHaveLength(0)
   })
@@ -140,7 +162,7 @@ describe('scheda Rette', () => {
     fireEvent.change(within(g).getByLabelText(itAnno.etichettaFascia), { target: { value: 'infanzia' } })
     expect(within(g).queryAllByRole('checkbox')).toHaveLength(0)
     fireEvent.change(campoImporto(g), { target: { value: '280' } })
-    fireEvent.click(within(g).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
     await waitFor(() => expect(puts()).toHaveLength(1))
     expect(corpoPut()).toEqual({ voce: 'retta', fascia: 'infanzia', importo: 280 })
   })
@@ -158,7 +180,7 @@ describe('scheda Rette', () => {
     rispostaPut = { status: 409, body: { error: 'Questo anno scolastico non si può più modificare da qui.', codice: 'ANNO_NON_MODIFICABILE' } }
     const g = await apriRette()
     fireEvent.change(campoImporto(g), { target: { value: '200' } })
-    fireEvent.click(within(g).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
     expect(await within(g).findByRole('alert')).toHaveTextContent('Questo anno scolastico non si può più modificare da qui.')
     expect(campoImporto(g).value).toBe('200')
   })
@@ -184,7 +206,7 @@ describe('scheda Rette negli anni in corso, in chiusura e chiusi', () => {
     expect(campoImporto(g).value).toBe('180')
     expect(campoImporto(g)).not.toBeDisabled()
     fireEvent.change(campoImporto(g), { target: { value: '190' } })
-    fireEvent.click(within(g).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
     await waitFor(() => expect(puts()).toHaveLength(1))
     expect(puts()[0][0]).toBe(`/api/admin/anni/${ANNO}/rette`)
     expect(corpoPut()).toEqual({ voce: 'retta', fascia: null, importo: 190 })
@@ -222,7 +244,7 @@ describe('scheda Rette negli anni in corso, in chiusura e chiusi', () => {
     const g = await apriRette()
     expect(campoImporto(g).value).toBe('275')
     fireEvent.click(within(g).getByRole('checkbox', { name: /luglio/i }))
-    fireEvent.click(within(g).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
     await waitFor(() => expect(puts()).toHaveLength(1))
     expect(corpoPut()).toMatchObject({ voce: 'retta', fascia: null, importo: 275 })
     expect((corpoPut().mesi as number[]).includes(7)).toBe(true)
@@ -247,7 +269,7 @@ describe('scheda Rette negli anni in corso, in chiusura e chiusi', () => {
     fireEvent.click(await screen.findByRole('button', { name: itAnno.schedaRette }))
     const g = await screen.findByRole('group', { name: 'Retta mensile · anno 2027/28' })
     fireEvent.change(campoImporto(g), { target: { value: '200' } })
-    fireEvent.click(within(g).getByRole('button', { name: itAnno.salva }))
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
     expect(await screen.findByText('Retta salvata per l’anno 2027/28 ✓')).toBeInTheDocument()
   })
 

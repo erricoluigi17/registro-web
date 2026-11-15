@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { CalendarDays, CheckCircle2, Copy } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
@@ -9,7 +10,7 @@ import { useAnnoOpzionale, useTestoStatoAnno } from '@/lib/context/anno-context'
 import { useCalendario, useCalendarioDi } from '@/lib/context/calendario-context';
 import { logClient, nomeErrore } from '@/lib/logging/client';
 import { messaggioDaCorpo } from '@/lib/ui/esito-fetch';
-import { AnnoConfigurazione } from './AnnoConfigurazione';
+import { AnnoConfigurazione, type Scheda } from './AnnoConfigurazione';
 import { btnPrimary, card, h3, hint, input, label } from './ui';
 
 /**
@@ -34,6 +35,15 @@ import { btnPrimary, card, h3, hint, input, label } from './ui';
  */
 
 type Blocco = 'confine' | 'date' | 'iscrizioni' | 'domande';
+
+/**
+ * La tappa della home da cui si arriva (`?tappa=`): decide la scheda da aprire e il blocco a cui scorrere. «Quote e retta» apre
+ * «Quote» (è la prima cosa che manca per aprire le iscrizioni; la retta sta nella scheda accanto), «Documenti da consegnare» apre
+ * «Documenti», «Apri le iscrizioni» porta al blocco che le apre.
+ */
+type Tappa = 'quote' | 'documenti' | 'iscrizioni';
+const SCHEDA_DELLA_TAPPA: Record<'quote' | 'documenti', Scheda> = { quote: 'quote', documenti: 'moduli' };
+const tappaDa = (v: string | null | undefined): Tappa | null => (v === 'quote' || v === 'documenti' || v === 'iscrizioni' ? v : null);
 
 /** L'errore come CODICE; il testo si compone al render. */
 type ErroreUi =
@@ -117,6 +127,8 @@ export function AnnoScolasticoSettings({ userId, scuolaId, annoSedeIdIniziale = 
   // sbagliato (prova con una segretaria inesperta, 14/11/2026).
   // `scelto` è solo la scelta fatta DOPO, dall'elenco qui sotto (derivato, nessun effetto che copia stato).
   const annoDelSelettore = useAnnoOpzionale()?.selezionato ?? null;
+  // La tappa vale solo per l'anno a cui il rimando punta (`anno_sede`): su un altro anno non c'è niente da cercare.
+  const tappaUrl = tappaDa(useSearchParams()?.get('tappa'));
   const [scelto, setScelto] = useState<string | null>(null);
 
   const intestazione = (
@@ -151,6 +163,7 @@ export function AnnoScolasticoSettings({ userId, scuolaId, annoSedeIdIniziale = 
   // Quello che si prepara è il più vicino (con due anni da preparare, prima l'anno prossimo).
   const inPreparazione = [...righe].reverse().find((r) => r.stato === 'in_preparazione' || r.stato === 'iscrizioni_aperte');
   const riga = righe.find((r) => r.annoId === scelto) ?? delRimando ?? sceltaDelSelettore ?? inPreparazione ?? attivo ?? righe[0];
+  const tappa = tappaUrl && delRimando && delRimando.annoSedeId === riga.annoSedeId ? tappaUrl : null;
   const successivo = calendario.find((r) => r.annoInizio === riga.annoInizio + 1) ?? null;
   // Con un anno da preparare, chi guarda l'anno in corso (o un altro) è invitato a scegliere quello giusto.
   const daPreparare = inPreparazione && inPreparazione.annoSedeId !== riga.annoSedeId ? inPreparazione : null;
@@ -191,6 +204,7 @@ export function AnnoScolasticoSettings({ userId, scuolaId, annoSedeIdIniziale = 
         riga={riga}
         successivo={successivo}
         daPreparare={daPreparare}
+        tappa={tappa}
         occupato={loading}
         onModificato={ricarica}
       />
@@ -208,6 +222,7 @@ function DettaglioAnno({
   riga,
   successivo,
   daPreparare,
+  tappa,
   occupato,
   onModificato,
 }: {
@@ -217,6 +232,8 @@ function DettaglioAnno({
   successivo: RigaCalendario | null;
   /** L'anno che si sta preparando, quando NON è quello aperto: serve a invitare a sceglierlo. */
   daPreparare: RigaCalendario | null;
+  /** La tappa della home da cui si arriva: scheda da aprire e blocco a cui scorrere. */
+  tappa: Tappa | null;
   /** Il calendario si sta rileggendo dopo un salvataggio. */
   occupato: boolean;
   onModificato: () => void;
@@ -230,6 +247,7 @@ function DettaglioAnno({
   const [apertaOra, setApertaOra] = useState(false);
   const [riletturaConf, setRiletturaConf] = useState(0);
   const [linkCopiato, setLinkCopiato] = useState(false);
+  const bloccoIscrizioni = useRef<HTMLFieldSetElement>(null);
   const aperta = apertaOra && riga.stato === 'in_preparazione';
   const statoVero = aperta ? 'iscrizioni_aperte' : riga.stato;
   const domandeAperte = riga.domandeAperte || aperta;
@@ -278,6 +296,12 @@ function DettaglioAnno({
   }, [inPreparazione, url, userId, versione]);
 
   const occupatoOra = inCorso !== null || occupato;
+
+  // «Apri le iscrizioni» dalla home: la pagina si apre in cima (le date) e il blocco sta più in basso, quindi si scorre fin lì. Una volta sola.
+  const scorreAlleIscrizioni = tappa === 'iscrizioni' && inPreparazione;
+  useEffect(() => {
+    if (scorreAlleIscrizioni) bloccoIscrizioni.current?.scrollIntoView?.({ block: 'start' });
+  }, [scorreAlleIscrizioni]);
 
   /** Una scrittura: segna «in corso», chiama, mostra l'esito sotto il blocco giusto, rilegge se è cambiato qualcosa. */
   const esegui = async (blocco: Blocco, metodo: 'PATCH' | 'POST', indirizzo: string, corpo: Record<string, unknown>) => {
@@ -487,7 +511,7 @@ function DettaglioAnno({
             {successivo !== null && (
               <div className="mt-3">
                 <button type="button" onClick={salvaFine} disabled={occupatoOra} className={btnPrimary}>
-                  {inCorso === 'confine' ? t('salvataggioInCorso') : t('salva')}
+                  {inCorso === 'confine' ? t('salvataggioInCorso') : t('annoSalvaFine')}
                 </button>
               </div>
             )}
@@ -527,7 +551,7 @@ function DettaglioAnno({
             {inChiusura && <p className={hint}>{t('annoUltimoGiornoBloccato')}</p>}
             <div className="mt-3">
               <button type="button" onClick={salvaDate} disabled={occupatoOra} className={btnPrimary}>
-                {inCorso === 'date' ? t('salvataggioInCorso') : t('salva')}
+                {inCorso === 'date' ? t('salvataggioInCorso') : t('annoSalvaDate')}
               </button>
             </div>
             {esitoDi('date')}
@@ -535,11 +559,11 @@ function DettaglioAnno({
 
           {/* ── Quote, moduli, posti e classi (anno in preparazione o con le iscrizioni aperte) ── */}
           {/* Per l'anno in corso e in chiusura resta la sola scheda Rette (la retta si imposta qui, non più in Impostazioni). */}
-          <AnnoConfigurazione userId={userId} annoSedeId={riga.annoSedeId} stato={statoVero} riletturaEsterna={riletturaConf} annoEtichetta={etichettaAnno(riga.annoInizio, 'breve')} onCambiata={configurazioneCambiata} />
+          <AnnoConfigurazione userId={userId} annoSedeId={riga.annoSedeId} stato={statoVero} riletturaEsterna={riletturaConf} schedaIniziale={tappa && tappa !== 'iscrizioni' ? SCHEDA_DELLA_TAPPA[tappa] : undefined} scorriAlBlocco={tappa === 'quote' || tappa === 'documenti'} annoEtichetta={etichettaAnno(riga.annoInizio, 'breve')} onCambiata={configurazioneCambiata} />
 
           {/* ── Aprire le iscrizioni (solo un anno in preparazione) ────────────────────── */}
           {inPreparazione && (
-            <fieldset className={gruppoClasse}>
+            <fieldset ref={bloccoIscrizioni} className={`${gruppoClasse} scroll-mt-4`}>
               <legend className={legenda}>{t('annoIscrizioniTitolo')}</legend>
               <p className="font-maven text-sm text-kidville-sub">{t('annoIscrizioniIntro')}</p>
               <div id={idStato} className="mt-2 font-maven text-sm text-kidville-ink">

@@ -126,5 +126,6 @@
   "preparaPassaggioSenzaData": "La data si calcola dall’ultimo giorno dell’anno in corso.",
   "preparaVai": "Apri",
   "preparaVaiAria": "Apri: {tappa}",
-  "sedeUnicaAria": "Sede di lavoro"
+  "sedeUnicaAria": "Sede di lavoro",
+  "preparaCaricamento": "Un attimo…"
 }
