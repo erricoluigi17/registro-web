@@ -486,9 +486,11 @@ describe('crm_ai_sposta', () => {
     expect(riga.assegnata_a).toBe(P2)
     expect(istante(riga.inizio)).toBe(SLOT_2)
     const ev = await eventi(`scheda_id = '${s}' AND tipo LIKE 'appuntamento_%'`)
-    expect(ev.map((e) => e.tipo)).toEqual(['appuntamento_spostato', 'appuntamento_riassegnato'])
-    expect(ev[1]).toMatchObject({ autore_via: 'ai', dati: { appuntamento_id: v, assegnata_prima: P1, assegnata_dopo: P2 } })
-    expect(Object.keys(ev[1].dati).sort()).toEqual(['appuntamento_id', 'assegnata_dopo', 'assegnata_prima'])
+    // I due eventi sono scritti dalla stessa chiamata: l'ordine fra istanti uguali non conta.
+    expect(ev.map((e) => e.tipo).sort()).toEqual(['appuntamento_riassegnato', 'appuntamento_spostato'])
+    const riass = ev.find((e) => e.tipo === 'appuntamento_riassegnato')!
+    expect(riass).toMatchObject({ autore_via: 'ai', dati: { appuntamento_id: v, assegnata_prima: P1, assegnata_dopo: P2 } })
+    expect(Object.keys(riass.dati).sort()).toEqual(['appuntamento_id', 'assegnata_dopo', 'assegnata_prima'])
   })
 
   it('nessuna candidata libera: slot_occupato e la visita resta all’orario di prima', async () => {
