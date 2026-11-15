@@ -1139,7 +1139,7 @@ function DetailPanel({
                       {/* Terzo giro (15/11): «se lascio vuoto, la retta sarà 300 € come ho impostato? Non lo dice».
                           Il listino per anno non è nei dati già letti qui (e una route nuova non si fa): si dice DOVE sta. */}
                       {rettaFacoltativa && annoRetta && (
-                        <p id={`ricevuti-retta-nota-${i}`} className="mt-1 text-xs text-kidville-muted">
+                        <p id={`ricevuti-retta-nota-${i}`} className="mt-1 text-xs text-kidville-sub">
                           {t('ricevutiRettaVuotaAnno', { anno: annoRetta })}
                         </p>
                       )}
@@ -1353,7 +1353,7 @@ function DetailPanel({
               {working ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
               {t('ricevutiImporta')}
             </button>
-            <p id="ricevuti-importa-desc" className="mt-1 text-center text-xs text-kidville-muted">{t('ricevutiImportaDesc')}</p>
+            <p id="ricevuti-importa-desc" className="mt-1 text-center text-xs text-kidville-sub">{t('ricevutiImportaDesc')}</p>
           </div>
           <button
             onClick={onReject}

@@ -181,7 +181,7 @@ test.describe('import in segreteria @solo-chromium', () => {
     await page.getByRole('button', { name: 'Accogli la domanda' }).click();
 
     // Esito: import ok + credenziali + degrado email (RESEND non configurato).
-    await expect(page.getByText('Iscrizione importata')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText('Domanda accolta')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(/Credenziali:/)).toBeVisible({ timeout: 15_000 });
     await expect(
       page.getByText('Email non inviata: comunicare le credenziali manualmente.')

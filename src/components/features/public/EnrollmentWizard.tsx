@@ -405,12 +405,12 @@ export function EnrollmentWizard({ scuolaId = null }: { scuolaId?: string | null
 
   const coppieResidenza = useMemo(() => coppieIndirizzo(childFields, adultFields), [childFields, adultFields])
 
-  /** Copia la residenza del PRIMO bambino nei campi dell'adulto (o, tolta la spunta, li svuota). */
+  /** Alla spunta copia la residenza del PRIMO bambino nei campi dell'adulto, una volta sola. Togliere la spunta non cancella niente. */
   function impostaStessoIndirizzo(indiceAdulto: number, attivo: boolean) {
     setStessoIndirizzo((s) => ({ ...s, [indiceAdulto]: attivo }))
     for (const { da, a } of coppieResidenza) {
-      const valore = attivo ? (getValues(`children.0.${da}`) ?? '') : ''
-      setValue(`adults.${indiceAdulto}.${a}`, valore, { shouldDirty: true, shouldValidate: false })
+      if (!attivo) break
+      setValue(`adults.${indiceAdulto}.${a}`, getValues(`children.0.${da}`) ?? '', { shouldDirty: true, shouldValidate: false })
     }
   }
 
