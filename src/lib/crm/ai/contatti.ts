@@ -10,7 +10,7 @@ type Appuntamento = Pick<AppuntamentoRow, 'id' | 'inizio' | 'fine' | 'stato' | '
 type AppuntamentoScheda = Appuntamento & Pick<AppuntamentoRow, 'scheda_id'>
 type SchedaPerTelefono = Pick<SchedaRow, 'id' | 'creato_via' | 'ai_stato' | 'non_contattare'>
 type BambinoScheda = Pick<BambinoRow, 'id' | 'scheda_id' | 'data_nascita' | 'esito' | 'creata_il'>
-const LIMITE_RIGHE_POSTGREST = 1000
+export const LIMITE_RIGHE_POSTGREST = 1000
 
 export interface VisitaAi {
   id: string
@@ -35,6 +35,13 @@ interface DettagliScheda {
   bambini: BambinoAi[]
 }
 
+/** Solo la visita fissata da questa stessa chiave, ancora in programma, si può spostare o annullare. */
+export function visitaModificabile(
+  visita: Pick<AppuntamentoRow, 'fissato_via' | 'integrazione_id' | 'stato'>, integrazioneId: string,
+): boolean {
+  return visita.fissato_via === 'ai' && visita.integrazione_id === integrazioneId && visita.stato === 'in_programma'
+}
+
 /** La prima visita in programma che deve ancora finire, altrimenti l’ultima passata. */
 export function visitaDi(appuntamenti: Appuntamento[], adesso: Date, integrazioneId: string): VisitaAi | null {
   const ordinati = appuntamenti
@@ -49,7 +56,7 @@ export function visitaDi(appuntamenti: Appuntamento[], adesso: Date, integrazion
     fine: visita.fine,
     stato: visita.stato,
     fissataVia: visita.fissato_via,
-    modificabile: visita.fissato_via === 'ai' && visita.integrazione_id === integrazioneId && visita.stato === 'in_programma',
+    modificabile: visitaModificabile(visita, integrazioneId),
     confermata: visita.promemoria_conferma ?? null,
   }
 }
@@ -102,10 +109,7 @@ export async function dettagliSchede(
 
   // Al tetto di PostgREST le righe possono essere state tagliate senza errore.
   if (Math.max(appuntamenti.data?.length ?? 0, bambini.data?.length ?? 0) >= LIMITE_RIGHE_POSTGREST) {
-    logEvento('crm', 'error', {
-      operazione, esito: 'max-rows-raggiunto', scuola_id: scuolaId, limite: LIMITE_RIGHE_POSTGREST,
-    })
-    return { response: rispostaCrmNonRiuscita() }
+    return { response: rispostaTettoRaggiunto(scuolaId, operazione) }
   }
 
   const visitePerScheda = new Map<string, Appuntamento[]>()
@@ -122,4 +126,42 @@ export async function dettagliSchede(
     perScheda.get(bambino.scheda_id)?.bambini.push({ id: bambino.id, nascita: meseDiNascita(bambino.data_nascita), esito: bambino.esito })
   }
   return { perScheda }
+}
+
+export interface RecapitoScheda {
+  /** Il primo numero normalizzato; `null` se la scheda è anonimizzata o non ne ha. */
+  telefono: string | null
+  nonContattare: boolean
+}
+
+/** Telefono e «non contattare» delle schede della sede: nessun nome, nota o riassunto. */
+export async function recapitiSchede(
+  supabase: SupabaseClient, scuolaId: string, schedaIds: string[], operazione: string,
+): Promise<{ perScheda: Map<string, RecapitoScheda> } | { response: NextResponse }> {
+  const perScheda = new Map<string, RecapitoScheda>()
+  if (schedaIds.length === 0) return { perScheda }
+
+  const { data, error } = await supabase.from('crm_schede')
+    .select('id, telefoni_norm, non_contattare, anonimizzata_il')
+    .eq('scuola_id', scuolaId)
+    .in('id', schedaIds)
+    .overrideTypes<Pick<SchedaRow, 'id' | 'telefoni_norm' | 'non_contattare' | 'anonimizzata_il'>[], { merge: false }>()
+  if (error) return { response: rispostaErroreDb(erroreDbSoloCodice(error), operazione) }
+  if ((data?.length ?? 0) >= LIMITE_RIGHE_POSTGREST) return { response: rispostaTettoRaggiunto(scuolaId, operazione) }
+
+  for (const scheda of data ?? []) {
+    perScheda.set(scheda.id, {
+      telefono: scheda.anonimizzata_il ? null : scheda.telefoni_norm[0] ?? null,
+      nonContattare: scheda.non_contattare,
+    })
+  }
+  return { perScheda }
+}
+
+/** Al tetto di PostgREST le righe possono essere state tagliate senza errore: meglio un 500 che un elenco parziale. */
+export function rispostaTettoRaggiunto(scuolaId: string, operazione: string): NextResponse {
+  logEvento('crm', 'error', {
+    operazione, esito: 'max-rows-raggiunto', scuola_id: scuolaId, limite: LIMITE_RIGHE_POSTGREST,
+  })
+  return rispostaCrmNonRiuscita()
 }
