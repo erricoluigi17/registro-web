@@ -38,16 +38,16 @@ export const POST = withRoute('crm/ai/contatti/stato:POST', async (request: Next
   if ('response' in trovata) return chiudiChiamataAi(ai, trovata.response)
   if (!trovata.scheda) {
     return chiudiChiamataAi(ai, NextResponse.json({
-      esiste: false, schedaId: null, creatoVia: null, visita: null, bambini: [],
+      esiste: false, schedaId: null, creatoVia: null, stato: null, nonContattare: false, visita: null, bambini: [],
     }))
   }
 
-  const { id: schedaId, creato_via: creatoVia } = trovata.scheda
-  const dettagli = await dettagliSchede(supabase, ai.scuolaId, [schedaId], new Date(), op)
+  const { id: schedaId, creato_via: creatoVia, ai_stato: stato, non_contattare: nonContattare } = trovata.scheda
+  const dettagli = await dettagliSchede(supabase, ai.scuolaId, [schedaId], new Date(), op, ai.integrazioneId)
   if ('response' in dettagli) return chiudiChiamataAi(ai, dettagli.response, { entitaId: schedaId })
 
   const scheda = dettagli.perScheda.get(schedaId)
   return chiudiChiamataAi(ai, NextResponse.json({
-    esiste: true, schedaId, creatoVia, visita: scheda?.visita ?? null, bambini: scheda?.bambini ?? [],
+    esiste: true, schedaId, creatoVia, stato, nonContattare, visita: scheda?.visita ?? null, bambini: scheda?.bambini ?? [],
   }), { entitaId: schedaId })
 })

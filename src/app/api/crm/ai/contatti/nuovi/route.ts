@@ -53,7 +53,7 @@ export const GET = withRoute('crm/ai/contatti/nuovi:GET', async (request: NextRe
   if (error) return chiudiChiamataAi(ai, rispostaErroreDbSchema(erroreDbSoloCodice(error), op))
 
   const schede = data ?? []
-  const dettagli = await dettagliSchede(supabase, ai.scuolaId, schede.map(({ id }) => id), new Date(), op)
+  const dettagli = await dettagliSchede(supabase, ai.scuolaId, schede.map(({ id }) => id), new Date(), op, ai.integrazioneId)
   if ('response' in dettagli) return chiudiChiamataAi(ai, dettagli.response)
 
   const contatti = schede.map(({ id, creata_il, telefoni_norm, origine }) => {
