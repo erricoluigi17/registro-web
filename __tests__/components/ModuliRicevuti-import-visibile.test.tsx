@@ -143,7 +143,7 @@ describe('ModuliRicevuti — l\'import non parte mai in silenzio', () => {
     await waitFor(() => expect(patch()).toHaveLength(1))
     const corpo = JSON.parse(String((patch()[0][1] as RequestInit).body))
     expect(corpo.rette).toEqual({})
-    expect(await screen.findByText(itAdminAltro.ricevutiImportata)).toBeInTheDocument()
+    expect(await screen.findByText('Domanda accolta')).toBeInTheDocument()
   })
 
   it('anno prossimo: il campo retta dice che vuoto vale il listino e non ha l\'asterisco', async () => {
@@ -175,6 +175,15 @@ describe('ModuliRicevuti — l\'import non parte mai in silenzio', () => {
     expect(enAdminAltro).toHaveProperty('ricevutiImportaDesc')
     expect(itAdminAltro).toHaveProperty('ricevutiRettaVuotaAnno')
     expect(enAdminAltro).toHaveProperty('ricevutiRettaVuotaAnno')
+  })
+
+  it('ritocco: i testi dell\'esito parlano di «accogliere», non di «importare»', () => {
+    expect(itAdminAltro.ricevutiImportNonCompletato).toBe('Accoglienza non completata')
+    expect(itAdminAltro.ricevutiImportata).toBe('Domanda accolta')
+    expect(itAdminAltro.ricevutiImportFallito).toBe('La domanda non è stata accolta')
+    for (const k of ['ricevutiIntro', 'ricevutiStatImportate', 'badgeImportata', 'ricevutiImportNonCompletato', 'ricevutiImportNonCompletatoDesc', 'ricevutiImportata', 'ricevutiImportFallito', 'ricevutiErroreImport', 'ricevutiImportNonRiuscito']) {
+      expect((itAdminAltro as Record<string, string>)[k]).not.toMatch(/import/i)
+    }
   })
 
   it('il server rifiuta (400 RETTA_MANCANTE): il messaggio compare nella pagina, non in un alert del browser', async () => {
@@ -214,7 +223,7 @@ describe('ModuliRicevuti — l\'import non parte mai in silenzio', () => {
     render(<ModuliRicevuti />)
     await apriEScegliClasse('Ada Verdi')
     importa()
-    expect(await screen.findByRole('alert')).toHaveTextContent(itAdminAltro.ricevutiImportFallito)
+    expect(await screen.findByRole('alert')).toHaveTextContent('La domanda non è stata accolta')
     expect(screen.queryByText(itAdminAltro.ricevutiImportata)).toBeNull()
     expect(logClientMock).toHaveBeenCalledWith(expect.objectContaining({
       livello: 'warn',

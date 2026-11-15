@@ -7,7 +7,7 @@ import enPublic from '../../messages/en/public.json'
 /**
  * Terzo giro (15/11): al passo dell'adulto bisognava riscrivere a mano la residenza identica a quella del bambino
  * («non c'è "uguale al bambino"»). Ora c'è una casella «Stesso indirizzo del bambino» che copia i cinque campi della
- * residenza e, tolta, li svuota. I campi si riconoscono dalla loro mappatura sul database (`alunni.residence_*` ↔
+ * residenza e, tolta, NON cancella niente. I campi si riconoscono dalla loro mappatura sul database (`alunni.residence_*` ↔
  * `parents.address`/`parents.residence_*`/`parents.zip_code`), non dal testo: un modulo modificato nel builder
  * continua a funzionare. Solo dati finti.
  */
@@ -106,7 +106,7 @@ async function finoAllAdulto() {
 }
 
 describe('EnrollmentWizard — «Stesso indirizzo del bambino»', () => {
-  it('spuntata, copia i cinque campi della residenza; tolta, li svuota', async () => {
+  it('spuntata, copia i cinque campi della residenza; tolta, NON cancella niente', async () => {
     mockFetch(CON_INDIRIZZO)
     render(<EnrollmentWizard />)
     await finoAllAdulto()
@@ -122,8 +122,11 @@ describe('EnrollmentWizard — «Stesso indirizzo del bambino»', () => {
 
     // Si rilegge la casella: il passo si ridisegna, e il riferimento di prima può non essere più nella pagina.
     fireEvent.click(screen.getByRole('checkbox', { name: 'Stesso indirizzo del bambino' }))
-    await waitFor(() => expect(valore('Via adulto')).toBe(''))
-    expect(valore('CAP adulto')).toBe('')
+    expect(valore('Via adulto')).toBe('Via Finta')
+    expect(valore('CAP adulto')).toBe('80100')
+    // tornano modificabili: ciò che l'adulto scrive a mano resta
+    scrivi('Via adulto', 'Via Scritta')
+    expect(valore('Via adulto')).toBe('Via Scritta')
     expect((screen.getByRole('checkbox', { name: 'Stesso indirizzo del bambino' }) as HTMLInputElement).checked).toBe(false)
   })
 

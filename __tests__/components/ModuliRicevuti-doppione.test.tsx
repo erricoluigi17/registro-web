@@ -118,7 +118,7 @@ describe('ModuliRicevuti — il doppione e la scheda esistente', () => {
       assignments: { '0': '3 ANNI' },
       rette: { '0': 300 },
     })
-    await screen.findByText('Iscrizione importata')
+    await screen.findByText('Domanda accolta')
   })
 
   it('con più schede gemelle (nessuna proposta) il pulsante NON c\'è: sceglierne una sarebbe indovinare', async () => {
