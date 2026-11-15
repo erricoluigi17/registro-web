@@ -2707,7 +2707,9 @@ describe('coverage-lock isolamento fra sedi', () => {
             // per quella sede; restituisce solo importi e titoli di configurazione. Misurato rieseguendo il lock: 420 → 421.
             // 421 → 422 il 2026-11-15 (CRM, porte della vendita, compito 5): `crm/ai/prenotazioni/[id]/sposta`, CONTROLLATA: la sede viene
             // dalla chiave AI e la funzione SQL ricontrolla la chiave. Misurato rieseguendo il lock: 421 → 422.
-            routeConServiceRole: 422,
+            // 422 → 423 il 2026-11-15 (compito 6): `crm/ai/contatti/aggiorna`, CONTROLLATA: la sede viene dalla chiave AI e la
+            // funzione SQL ricontrolla la chiave. Misurato rieseguendo il lock: 422 → 423.
+            routeConServiceRole: 423,
             // 441 → 440 il 2026-08-11: è USCITO `admin/adults:POST`, cancellato perché
             // irraggiungibile (nessuna pagina montava la sua scheda) e rotto (scriveva le
             // colonne generate di `utenti`: `428C9` a ogni tentativo, dopo aver già invitato
@@ -3077,6 +3079,7 @@ describe('coverage-lock isolamento fra sedi', () => {
             // `handlerEsentati` non cambia (108). Misurato rieseguendo il lock: 631 → 641.
             // 641 → 642 il 2026-11-14: `iscrizione/info-anno:GET` (vedi sopra). Misurato rieseguendo il lock: 641 → 642.
             // 642 → 643 il 2026-11-15 (compito 5): `sposta:POST`, CONTROLLATO; `handlerEsentati` non cambia (108).
+            // 643 → 644 il 2026-11-15 (compito 6): `aggiorna:POST`, CONTROLLATO; `handlerEsentati` non cambia (108).
             handlerControllati: 643,
             // 111 → 109 il 2026-07-31: `tasks:GET` e `tasks:POST` non sono più
             // esentati. Questo numero CALA solo quando un debito viene pagato;
