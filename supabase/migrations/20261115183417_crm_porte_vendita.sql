@@ -1,7 +1,8 @@
 -- CRM segreteria · Le porte della vendita
 -- L’assistente della vendita, sul Mac, tiene sulla scheda lo stato della famiglia, un riassunto e il rifiuto
--- a essere contattata, e registra sulla visita la risposta al promemoria. Il registro delle richieste
--- dell’assistente ammette le operazioni nuove. La applica l’integrazione al merge.
+-- a essere contattata, registra sulla visita la risposta al promemoria e sposta in un colpo solo una visita
+-- che ha fissato. Il registro delle richieste dell’assistente ammette le operazioni nuove. La applica
+-- l’integrazione al merge.
 -- Idempotente: deve poter girare due volte di fila. Gli eventi usano clock_timestamp().
 
 -- ── 1) Le colonne della vendita ─────────────────────────────────────────────
@@ -103,8 +104,8 @@ BEGIN
     IF jsonb_typeof(p_dati->'riassunto') IS DISTINCT FROM 'string' OR char_length(p_dati->>'riassunto') > 4000 THEN
       RAISE EXCEPTION 'riassunto: un testo fino a 4000 caratteri' USING ERRCODE = '22023';
     END IF;
-    -- La stringa vuota cancella il riassunto.
-    v_riassunto := nullif(btrim(p_dati->>'riassunto'), '');
+    -- La stringa vuota, o di soli spazi, a capo e tabulazioni, cancella il riassunto.
+    v_riassunto := nullif(btrim(p_dati->>'riassunto', E' \t\r\n'), '');
   END IF;
   -- Un’AI non toglie un rifiuto: lo toglie una persona.
   IF v_ha_rifiuto AND p_dati->'non_contattare' IS DISTINCT FROM 'true'::jsonb THEN
@@ -233,10 +234,13 @@ BEGIN
     RETURN v_r.risposta || jsonb_build_object('ripetuta', true);
   END IF;
 
-  -- Il promemoria vale per ogni visita della sede, anche quelle fissate dalla segreteria.
-  SELECT * INTO v_visita FROM public.crm_appuntamenti
-   WHERE id = p_appuntamento_id AND scuola_id = p_scuola_id
-   FOR NO KEY UPDATE;
+  -- Il promemoria vale per ogni visita della sede, anche quelle fissate dalla segreteria, ma non per una
+  -- famiglia anonimizzata.
+  SELECT a.* INTO v_visita FROM public.crm_appuntamenti a
+   WHERE a.id = p_appuntamento_id AND a.scuola_id = p_scuola_id
+     AND EXISTS (SELECT 1 FROM public.crm_schede s
+                  WHERE s.id = a.scheda_id AND s.scuola_id = a.scuola_id AND s.anonimizzata_il IS NULL)
+   FOR NO KEY UPDATE OF a;
   IF NOT FOUND THEN
     RETURN jsonb_build_object('esito', 'non_trovato');
   END IF;
@@ -269,6 +273,149 @@ REVOKE ALL ON FUNCTION public.crm_ai_conferma(uuid, uuid, text, text, uuid, bool
 GRANT EXECUTE ON FUNCTION public.crm_ai_conferma(uuid, uuid, text, text, uuid, boolean) TO service_role;
 
 COMMENT ON FUNCTION public.crm_ai_conferma(uuid, uuid, text, text, uuid, boolean) IS
-  'CRM, accesso AI: registra sulla visita in programma della sede (fissata da chiunque) se la famiglia conferma il promemoria, con una nota a testo fisso nello storico. Una visita annullata, svolta o già finita non si tocca. Idempotente sulla chiave di chi chiama. Solo service_role.';
+  'CRM, accesso AI: registra sulla visita in programma della sede (fissata da chiunque) se la famiglia conferma il promemoria, con una nota a testo fisso nello storico. Una visita annullata, svolta o già finita, o di una scheda anonimizzata, non si tocca. Idempotente sulla chiave di chi chiama. Solo service_role.';
+
+-- ── 5) crm_ai_sposta: un nuovo orario per una visita fissata dall’assistente ─
+-- Si cambia la stessa riga con un solo UPDATE: la famiglia non resta mai senza posto, e se nessuna candidata
+-- è libera la visita resta com’era. Il vincolo di esclusione arbitra le visite concorrenti, come in crm_ai_prenota.
+CREATE OR REPLACE FUNCTION public.crm_ai_sposta(
+  p_integrazione_id uuid,
+  p_scuola_id       uuid,
+  p_chiave          text,
+  p_impronta        text,
+  p_appuntamento_id uuid,
+  p_inizio          timestamptz,
+  p_durata_min      integer,
+  p_candidati       uuid[]
+) RETURNS jsonb
+  LANGUAGE plpgsql
+  SECURITY INVOKER
+  SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_r         public.crm_ai_richieste%ROWTYPE;
+  v_visita    public.crm_appuntamenti%ROWTYPE;
+  v_candidati uuid[];
+  v_persona   uuid;
+  v_spostata  boolean := false;
+  v_fine      timestamptz;
+  v_risposta  jsonb;
+BEGIN
+  IF p_integrazione_id IS NULL OR p_scuola_id IS NULL
+     OR p_chiave IS NULL OR p_chiave !~ '^[A-Za-z0-9_-]{8,128}$'
+     OR p_impronta IS NULL OR p_impronta !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'integrazione, sede, chiave e impronta sono obbligatorie' USING ERRCODE = '22023';
+  END IF;
+  -- Candidate nulle vuol dire tutte le persone della sede, come in crm_ai_prenota; un elenco vuoto è un errore.
+  IF p_appuntamento_id IS NULL OR p_inizio IS NULL OR NOT isfinite(p_inizio) OR p_durata_min IS NULL
+     OR p_durata_min NOT BETWEEN 15 AND 240 OR cardinality(p_candidati) = 0 THEN
+    RAISE EXCEPTION 'visita, orario, durata e candidate non validi' USING ERRCODE = '22023';
+  END IF;
+  IF NOT public.crm_ai_token_attivo(p_integrazione_id, p_scuola_id) THEN
+    RETURN jsonb_build_object('esito', 'token_non_valido');
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended('crm_ai_richiesta|' || p_integrazione_id::text || '|' || p_chiave, 0));
+  SELECT * INTO v_r FROM public.crm_ai_richieste
+   WHERE integrazione_id = p_integrazione_id AND scuola_id = p_scuola_id AND chiave = p_chiave;
+  IF FOUND THEN
+    IF v_r.impronta <> p_impronta THEN
+      RETURN jsonb_build_object('esito', 'chiave_riusata');
+    END IF;
+    IF v_r.risposta IS NULL THEN
+      RETURN jsonb_build_object('esito', 'in_corso');
+    END IF;
+    RETURN v_r.risposta || jsonb_build_object('ripetuta', true);
+  END IF;
+
+  -- Come crm_ai_annulla: l’assistente sposta solo ciò che ha fissato la sua chiave, e mai la visita di una
+  -- famiglia anonimizzata. NO KEY UPDATE lascia passare il KEY SHARE delle chiavi esterne del registro.
+  SELECT a.* INTO v_visita FROM public.crm_appuntamenti a
+   WHERE a.id = p_appuntamento_id AND a.scuola_id = p_scuola_id
+     AND a.integrazione_id = p_integrazione_id AND a.fissato_via = 'ai'
+     AND EXISTS (SELECT 1 FROM public.crm_schede s
+                  WHERE s.id = a.scheda_id AND s.scuola_id = a.scuola_id AND s.anonimizzata_il IS NULL)
+   FOR NO KEY UPDATE OF a;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('esito', 'non_trovato');
+  END IF;
+  IF v_visita.stato <> 'in_programma' OR v_visita.fine <= clock_timestamp() THEN
+    RETURN jsonb_build_object('esito', 'stato_non_ammesso');
+  END IF;
+
+  -- Stesso inizio e stessa durata: niente da scrivere, né un evento che dice «spostata» di una visita ferma.
+  IF v_visita.inizio = p_inizio AND v_visita.durata_min = p_durata_min THEN
+    v_risposta := jsonb_build_object('esito', 'invariata', 'appuntamento_id', v_visita.id,
+      'inizio', v_visita.inizio, 'fine', v_visita.fine, 'scheda_id', v_visita.scheda_id, 'assegnata_a', v_visita.assegnata_a);
+    INSERT INTO public.crm_ai_richieste
+      (scuola_id, integrazione_id, chiave, operazione, impronta, risposta, scheda_id, appuntamento_id, conclusa_il)
+    VALUES
+      (p_scuola_id, p_integrazione_id, p_chiave, 'sposta', p_impronta, v_risposta, v_visita.scheda_id, v_visita.id, clock_timestamp());
+    RETURN v_risposta;
+  END IF;
+
+  IF p_inizio < clock_timestamp() + interval '120 minutes' THEN
+    RETURN jsonb_build_object('esito', 'fuori_disponibilita');
+  END IF;
+  v_candidati := public.crm_ai_candidati(p_scuola_id, p_inizio, p_durata_min, p_candidati);
+  IF cardinality(v_candidati) = 0 THEN
+    RETURN jsonb_build_object('esito', 'fuori_disponibilita');
+  END IF;
+  -- Prima la persona già assegnata, se è fra le candidate; poi le altre nell’ordine ricevuto.
+  IF v_visita.assegnata_a = ANY (v_candidati) THEN
+    v_candidati := array_prepend(v_visita.assegnata_a, array_remove(v_candidati, v_visita.assegnata_a));
+  END IF;
+
+  v_fine := p_inizio + make_interval(mins => p_durata_min);
+  FOREACH v_persona IN ARRAY v_candidati LOOP
+    BEGIN
+      UPDATE public.crm_appuntamenti
+         SET inizio                 = p_inizio,
+             fine                   = v_fine,
+             durata_min             = p_durata_min,
+             assegnata_a            = v_persona,
+             promemoria_conferma    = NULL,
+             promemoria_conferma_il = NULL,
+             aggiornato_il          = clock_timestamp()
+       WHERE id = v_visita.id AND scuola_id = p_scuola_id;
+      v_spostata := true;
+      EXIT;
+    EXCEPTION WHEN exclusion_violation THEN
+      NULL;
+    END;
+  END LOOP;
+
+  IF NOT v_spostata THEN
+    -- Un rifiuto non entra nel registro: lo stesso tentativo, più tardi, viene rivalutato.
+    RETURN jsonb_build_object('esito', 'slot_occupato');
+  END IF;
+
+  -- Le stesse chiavi degli eventi della segreteria (PATCH /api/admin/crm/appuntamenti/[id]).
+  INSERT INTO public.crm_eventi (scheda_id, scuola_id, tipo, autore_via, dati, creato_il)
+  VALUES (v_visita.scheda_id, p_scuola_id, 'appuntamento_spostato', 'ai',
+    jsonb_build_object('appuntamento_id', v_visita.id, 'inizio_prima', v_visita.inizio, 'inizio_dopo', p_inizio,
+                       'durata_min', p_durata_min),
+    clock_timestamp());
+  IF v_persona <> v_visita.assegnata_a THEN
+    INSERT INTO public.crm_eventi (scheda_id, scuola_id, tipo, autore_via, dati, creato_il)
+    VALUES (v_visita.scheda_id, p_scuola_id, 'appuntamento_riassegnato', 'ai',
+      jsonb_build_object('appuntamento_id', v_visita.id, 'assegnata_prima', v_visita.assegnata_a, 'assegnata_dopo', v_persona),
+      clock_timestamp());
+  END IF;
+
+  v_risposta := jsonb_build_object('esito', 'spostata', 'appuntamento_id', v_visita.id, 'inizio', p_inizio, 'fine', v_fine,
+    'scheda_id', v_visita.scheda_id, 'assegnata_a', v_persona, 'assegnata_prima', v_visita.assegnata_a);
+  INSERT INTO public.crm_ai_richieste
+    (scuola_id, integrazione_id, chiave, operazione, impronta, risposta, scheda_id, appuntamento_id, conclusa_il)
+  VALUES
+    (p_scuola_id, p_integrazione_id, p_chiave, 'sposta', p_impronta, v_risposta, v_visita.scheda_id, v_visita.id, clock_timestamp());
+  RETURN v_risposta;
+END $$;
+
+REVOKE ALL ON FUNCTION public.crm_ai_sposta(uuid, uuid, text, text, uuid, timestamptz, integer, uuid[]) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.crm_ai_sposta(uuid, uuid, text, text, uuid, timestamptz, integer, uuid[]) TO service_role;
+
+COMMENT ON FUNCTION public.crm_ai_sposta(uuid, uuid, text, text, uuid, timestamptz, integer, uuid[]) IS
+  'CRM, accesso AI: sposta a un nuovo orario della griglia una visita in programma fissata dalla stessa chiave, cambiando la stessa riga (mai una visita nuova). Prima la persona già assegnata, poi le altre candidate libere; la risposta al promemoria si azzera. Se nessuna è libera la visita resta com’era (slot_occupato). Nello storico appuntamento_spostato, e appuntamento_riassegnato se cambia persona. Idempotente sulla chiave di chi chiama. Solo service_role.';
 
 NOTIFY pgrst, 'reload schema';
