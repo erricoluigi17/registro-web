@@ -183,6 +183,7 @@ export function appuntamento(
     assegnata_a: o.svolto_da ?? o.fissato_da ?? PERSONA_1,
     fissato_da: PERSONA_1,
     fissato_via: 'segreteria',
+    integrazione_id: null,
     svolto_da: null,
     segnato_da: null,
     segnato_il: null,

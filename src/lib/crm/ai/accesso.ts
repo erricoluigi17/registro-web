@@ -12,7 +12,9 @@ import { CODICI_ERRORE } from '@/lib/ui/esito-fetch'
 import { crmAiAttivo, sedeAmmessaAi, sediAmmesseAi } from './interruttore'
 import { improntaToken, tokenDaRichiesta } from './token'
 
-export type OperazioneAi = 'slot' | 'prenota' | 'annulla' | 'contatto' | 'contatto_stato' | 'contatti_nuovi' | 'richiamo'
+export type OperazioneAi =
+  | 'slot' | 'prenota' | 'annulla' | 'contatto' | 'contatto_stato' | 'contatti_nuovi' | 'richiamo'
+  | 'sposta' | 'aggiorna_scheda' | 'conferma' | 'prenotazioni_giorno' | 'non_venute'
 
 /** La sede della chiave è l'unica su cui la chiamata può lavorare. */
 export interface ContestoAi {

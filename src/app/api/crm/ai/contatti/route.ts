@@ -77,7 +77,7 @@ export const POST = withRoute('crm/ai/contatti:POST', async (request: NextReques
   const { scheda_id: schedaId, creata } = esito.data
   let visita: VisitaAi | null = null
   if (!creata) {
-    const dettagli = await dettagliSchede(supabase, ai.scuolaId, [schedaId], new Date(), op)
+    const dettagli = await dettagliSchede(supabase, ai.scuolaId, [schedaId], new Date(), op, ai.integrazioneId)
     if ('response' in dettagli) return chiudiChiamataAi(ai, dettagli.response, { entitaId: schedaId })
     visita = dettagli.perScheda.get(schedaId)?.visita ?? null
   }

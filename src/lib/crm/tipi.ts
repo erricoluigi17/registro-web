@@ -293,6 +293,8 @@ export interface AppuntamentoRow {
   assegnata_a: string
   fissato_da: string | null
   fissato_via: Via
+  /** La chiave del CRM AI che ha fissato la visita (nullo se l'ha fissata la segreteria). */
+  integrazione_id: string | null
   stato: StatoAppuntamento
   svolto_da: string | null
   segnato_da: string | null
