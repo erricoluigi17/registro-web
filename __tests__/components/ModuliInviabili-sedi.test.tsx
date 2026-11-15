@@ -54,10 +54,10 @@ beforeEach(() => {
 
 import { ModuliInviabili } from '@/components/features/admin/iscrizioni/ModuliInviabili'
 
-const NOTA_IT = 'Link unico per tutte le sedi: è il genitore a scegliere il plesso nel primo passo del modulo.'
+const NOTA_IT = 'Il link per tutte le sedi non fissa la scuola: la famiglia sceglie la scuola nel modulo.'
 
 describe('ModuliInviabili — nota sul link unico', () => {
-  it('mostra la nota accanto al bottone «Copia link»', async () => {
+  it('mostra la nota accanto al bottone «Copia il link per tutte le sedi»', async () => {
     render(<ModuliInviabili />)
     await waitFor(() => expect(screen.getByText(NOTA_IT)).toBeInTheDocument())
     // Nessun testo cablato: la stringa arriva dal catalogo (il mock di next-intl

@@ -47,7 +47,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [] }))
 })
 
-const standard = () => screen.getAllByRole('button', { name: itAdminAltro.inviabiliCopiaLink })[0]
+const standard = () => screen.getByRole('button', { name: itAdminAltro.inviabiliCopiaLinkTutte })
 
 describe('ModuliInviabili — «Copia link» mostra l’indirizzo copiato', () => {
   it('il link unico: copia /iscrizione e lo scrive a schermo', async () => {
@@ -89,8 +89,17 @@ describe('ModuliInviabili — «Copia link» mostra l’indirizzo copiato', () =
     await waitFor(() => expect(scrivi).toHaveBeenCalledWith(`${window.location.origin}/iscrizione?scuola=${SEDE_B}`))
   })
 
+  it('terzo giro (15/11): il link della sede viene PER PRIMO, quello per tutte le sedi dopo, e lo dice', async () => {
+    render(<ModuliInviabili />)
+    const sede = await screen.findByRole('button', { name: 'Copia il link per Kidville Prova' })
+    const tutte = screen.getByRole('button', { name: 'Copia il link per tutte le sedi' })
+    // DOCUMENT_POSITION_FOLLOWING: `tutte` sta dopo `sede` nel documento.
+    expect(sede.compareDocumentPosition(tutte) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText(/la famiglia sceglie la scuola nel modulo/i)).toBeInTheDocument()
+  })
+
   it('le chiavi nuove esistono in it ed en', () => {
-    for (const k of ['inviabiliCopiaLinkSede', 'inviabiliCopiaLinkSedeSenzaNome', 'inviabiliIndirizzoCopiato']) {
+    for (const k of ['inviabiliCopiaLinkSede', 'inviabiliCopiaLinkSedeSenzaNome', 'inviabiliCopiaLinkTutte', 'inviabiliIndirizzoCopiato']) {
       expect(itAdminAltro).toHaveProperty(k)
       expect(enAdminAltro).toHaveProperty(k)
     }

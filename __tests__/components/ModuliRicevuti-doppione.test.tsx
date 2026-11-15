@@ -95,7 +95,7 @@ async function apriECompila() {
   const classe = await screen.findByLabelText(/Classe \/ Sezione/i)
   fireEvent.change(classe, { target: { value: '3 ANNI' } })
   fireEvent.change(screen.getByLabelText(/Retta mensile/i), { target: { value: '300' } })
-  fireEvent.click(screen.getByRole('button', { name: /Importa nelle anagrafiche/i }))
+  fireEvent.click(screen.getByRole('button', { name: /Accogli la domanda/i }))
 }
 
 describe('ModuliRicevuti — il doppione e la scheda esistente', () => {
@@ -170,7 +170,7 @@ describe('ModuliRicevuti — il doppione e la scheda esistente', () => {
     // L'import non parte più se manca la classe o la retta (lo dice la pagina, vedi ModuliRicevuti-import-visibile): si compilano.
     for (const classe of await screen.findAllByLabelText(/Classe \/ Sezione/i)) fireEvent.change(classe, { target: { value: '3 ANNI' } })
     for (const retta of screen.getAllByLabelText(/Retta mensile/i)) fireEvent.change(retta, { target: { value: '300' } })
-    fireEvent.click(screen.getByRole('button', { name: /Importa nelle anagrafiche/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Accogli la domanda/i }))
 
     const [primo] = await screen.findAllByRole('button', { name: ETICHETTA })
     fireEvent.click(primo)
