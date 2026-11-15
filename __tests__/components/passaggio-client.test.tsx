@@ -84,6 +84,7 @@ const s = {
   scopedSenzaVecchia: false,
   /** (F3) I docenti copiati del passaggio e l'elenco del personale che la route `admin/staff` restituisce. */
   docenti: [{ utente_id: 'd1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1', sezione_a_id: '52525252-5252-4525-8525-525252525252', origine: 'copiata' as const }] as Array<{ utente_id: string; sezione_a_id: string; origine: 'copiata' | 'aggiunta' | 'tolta' }>,
+  staffErr: null as null | number,
   staff: [{ id: 'd1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1', nome: 'NomeDocente', cognome: 'CognomeDocente', ruolo: 'docente' }] as Array<{ id: string; nome: string | null; cognome: string | null; ruolo: string; scuola_id?: string | null }>,
 }
 const fetchMock = vi.fn()
@@ -144,6 +145,7 @@ function risposta(url: string, metodo: string, body: Record<string, unknown>): R
       ...(s.scopedSenzaVecchia ? [] : [{ id: S_DA, name: 'Sezione Partenza', school_type: 'infanzia' }]),
     ] }])
   }
+  if (url.includes('/api/admin/staff') && s.staffErr) return { status: s.staffErr, body: {} }
   if (url.includes('/api/admin/staff')) return { status: 200, body: { success: true, data: s.staff } }
   // (F3) L'anno IN CORSO non ha un passaggio suo: il passaggio sta sull'anno nuovo (ANNO). Qui la lettura dell'anno in corso è vuota.
   if (url.includes(`/api/admin/anni/${ANNO_CORRENTE}/passaggio`) && metodo === 'GET') return ok({ passaggio: null, righe: [], totale: 0, docenti: [] })
@@ -189,6 +191,7 @@ beforeEach(() => {
   s.pending = false
   s.lettura = null
   s.scopedSenzaVecchia = false
+  s.staffErr = null
   s.docenti = [{ utente_id: DOC1, sezione_a_id: S_A1, origine: 'copiata' }]
   s.staff = [{ id: DOC1, nome: 'NomeDocente', cognome: 'CognomeDocente', ruolo: 'docente' }]
   fetchMock.mockImplementation((url: string, init?: { method?: string; body?: string }) => {
@@ -739,6 +742,27 @@ describe('PassaggioClient · F3-3 · i docenti delle classi nuove hanno un nome 
     const opzioni = Array.from(tendina.options).map((o) => o.textContent)
     expect(opzioni).toContain('NomeDue Collega')
     expect(opzioni).not.toContain('NomeDocente CognomeDocente')
+  })
+})
+
+describe('PassaggioClient · F3-3b · se la lettura del personale fallisce', () => {
+  it('niente «non presente nell’elenco»: una riga lo dice, c’è «Riprova», e dopo il successo compaiono i nomi', async () => {
+    s.staffErr = 500
+    render(<PassaggioClient />)
+    const sez = (await screen.findByRole('region', { name: itPassaggio.docentiTitolo })) as HTMLElement
+    expect(await within(sez).findByText(itPassaggio.personaleErrore)).toBeTruthy()
+    expect(within(sez).queryByText(itPassaggio.docenteNonInElenco)).toBeNull()
+    s.staffErr = null
+    fireEvent.click(within(sez).getByRole('button', { name: itPassaggio.riprova }))
+    await waitFor(() => expect(within(within(sez).getAllByRole('listitem')[0]).getByText('NomeDocente CognomeDocente')).toBeTruthy())
+    expect(within(sez).queryByText(itPassaggio.personaleErrore)).toBeNull()
+  })
+
+  it('il testo «non presente» non dice più «di questa sede»', () => {
+    expect(itPassaggio.docenteNonInElenco).not.toMatch(/sede/)
+    expect(enPassaggio.docenteNonInElenco).not.toMatch(/location|campus/)
+    expect(itPassaggio.personaleErrore).toMatch(/\S/)
+    expect(enPassaggio.personaleErrore).toMatch(/\S/)
   })
 })
 
