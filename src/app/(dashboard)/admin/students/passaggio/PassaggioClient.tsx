@@ -157,11 +157,27 @@ export function PassaggioClient() {
   const anno = useAnnoOpzionale();
   const effettivo = anno?.effettivo ?? null;
   if (!effettivo || !effettivo.annoSedeId) return <p className="font-maven text-sm text-kidville-sub">{t('nessunAnno')}</p>;
+  // (F3-1) Sull'anno IN CORSO il passaggio non c'è: si prepara sull'anno dopo. Se esiste, la pagina lo nomina e porta lì con un pulsante.
+  const successivo = effettivo.attivo ? (anno?.anni ?? []).find((a) => a.annoInizio === effettivo.annoInizio + 1) : undefined;
+  const prossimo: Prossimo | null = successivo ? { annoId: successivo.annoId, annoSedeId: successivo.annoSedeId, etichetta: successivo.etichetta } : null;
   // `key`: cambiato l'anno si riparte da zero (filtro, pagina, esito).
-  return <Passaggio key={effettivo.annoSedeId} annoSedeId={effettivo.annoSedeId} puoCalcolare={!effettivo.attivo && effettivo.stato === 'iscrizioni_aperte'} inPreparazione={effettivo.stato === 'in_preparazione'} />;
+  return (
+    <Passaggio
+      key={effettivo.annoSedeId}
+      annoSedeId={effettivo.annoSedeId}
+      puoCalcolare={!effettivo.attivo && effettivo.stato === 'iscrizioni_aperte'}
+      inPreparazione={effettivo.stato === 'in_preparazione'}
+      prossimo={prossimo}
+      scegliAnno={(annoId) => anno?.scegli(annoId)}
+    />
+  );
 }
 
-function Passaggio({ annoSedeId, puoCalcolare, inPreparazione }: { annoSedeId: string; puoCalcolare: boolean; inPreparazione: boolean }) {
+type Prossimo = { annoId: string; annoSedeId: string | null; etichetta: string };
+
+function Passaggio({
+  annoSedeId, puoCalcolare, inPreparazione, prossimo, scegliAnno,
+}: { annoSedeId: string; puoCalcolare: boolean; inPreparazione: boolean; prossimo: Prossimo | null; scegliAnno: (annoId: string) => void }) {
   const t = useTranslations('annoPassaggio');
   const locale = useLocale();
   const { userId } = useAdminIdentity();
@@ -170,6 +186,8 @@ function Passaggio({ annoSedeId, puoCalcolare, inPreparazione }: { annoSedeId: s
   const { sedeCorrente } = useSediAttive();
 
   const [versione, setVersione] = useState(0);
+  // (F3) «Riprova» sulla lettura del personale: rilegge solo quella (il fallimento lo registra già `chiama`, senza dati personali).
+  const [versioneStaff, setVersioneStaff] = useState(0);
   const [filtro, setFiltro] = useState<Filtro>('tutti');
   const [pagina, setPagina] = useState(1);
   const [messaggio, setMessaggio] = useState<Messaggio | null>(null);
@@ -207,6 +225,16 @@ function Passaggio({ annoSedeId, puoCalcolare, inPreparazione }: { annoSedeId: s
   }, [base, uid]);
   const contatori = useLettura(passaggioId ? `${base}|c|${versione}` : null, leggiContatori);
 
+  // (F3-1) Sull'anno in corso, senza passaggio: c'è già un'anteprima sull'anno nuovo? Si legge una riga sola, solo per dirlo.
+  const prossimoSedeId = prossimo?.annoSedeId ?? null;
+  const leggiProssimo = useCallback(async (): Promise<Esito<PassaggioApi | null>> => {
+    const r = await chiama('GET', `/api/admin/anni/${prossimoSedeId}/passaggio?pagina=1&tetto=1`, uid);
+    const d = riuscita(r) ? estraiLetta(r) : null;
+    return d ? { ok: true, dati: d.passaggio } : { ok: false, stato: r.stato, corpo: r.corpo };
+  }, [prossimoSedeId, uid]);
+  const cercaProssimo = elenco.fase === 'ok' && !elenco.dati.passaggio && prossimoSedeId !== null;
+  const prossimoLetto = useLettura(cercaProssimo ? `${prossimoSedeId}|prossimo|${versione}` : null, leggiProssimo);
+
   const leggiSezioni = useCallback(async (): Promise<Esito<Sezione[]>> => {
     const r = await chiama('GET', '/api/admin/sections/scoped', uid);
     const gruppi = dati(r.corpo);
@@ -238,12 +266,15 @@ function Passaggio({ annoSedeId, puoCalcolare, inPreparazione }: { annoSedeId: s
     const d = dati(r.corpo);
     return riuscita(r) && Array.isArray(d) ? { ok: true, dati: d as Staff[] } : { ok: false, stato: r.stato, corpo: r.corpo };
   }, [uid]);
-  const staffLetto = useLettura(passaggioId ? 'staff' : null, leggiStaff);
+  const staffLetto = useLettura(passaggioId ? `staff|${versioneStaff}` : null, leggiStaff);
   // (giro 1, B5) Nella tendina solo il personale della sede dell'anno, non i genitori né i colleghi delle altre sedi: la route lo rifiuta comunque.
   const staff = useMemo(
     () => (staffLetto.fase === 'ok' ? staffLetto.dati.filter((x) => x.ruolo !== 'genitore' && (!sedeCorrente || !x.scuola_id || x.scuola_id === sedeCorrente)) : []),
     [staffLetto, sedeCorrente],
   );
+  // (F3-3) I NOMI dei docenti del passaggio si cercano in tutto il personale che la route ha dato, non solo in quello della sede scelta nel
+  // selettore: un docente di un'altra sede restava «senza nome». La tendina «aggiungi» resta quella filtrata qui sopra.
+  const personale = useMemo(() => (staffLetto.fase === 'ok' ? staffLetto.dati.filter((x) => x.ruolo !== 'genitore') : []), [staffLetto]);
 
   // I NOMI: solo dei bambini di cui la pagina mostra una riga. Le route danno uuid; qui si cercano nelle schede (prima chi frequenta,
   // poi chi arriva, poi chi non è più iscritto) e di tutto l'elenco si tiene soltanto ciò che serve a queste righe.
@@ -386,6 +417,21 @@ function Passaggio({ annoSedeId, puoCalcolare, inPreparazione }: { annoSedeId: s
 
   // Nessun passaggio vivo: mai calcolato, oppure annullato.
   if (!passaggio) {
+    // (F3-1) Anno in corso con un anno nuovo: niente «usa il selettore», ma dove sta il passaggio, se c'è già un'anteprima e un pulsante che ci porta.
+    if (prossimo) {
+      const lettoProssimo = prossimoLetto.fase === 'ok' ? prossimoLetto.dati : undefined;
+      const anteprimaDi = lettoProssimo
+        ? lettoProssimo.stato === 'anteprima' ? 'prossimoAnteprimaC' : lettoProssimo.stato === 'confermato' ? 'prossimoConfermato' : 'prossimoAnteprimaNo'
+        : prossimoLetto.fase === 'ok' ? 'prossimoAnteprimaNo' : null;
+      return (
+        <div>
+          <p className="font-maven text-sm text-kidville-green">{t('prossimoNota', { periodo: prossimo.etichetta })}</p>
+          {anteprimaDi && <p className={hint}>{t(anteprimaDi, { periodo: prossimo.etichetta })}</p>}
+          <button type="button" className={`${btnPrimary} mt-3`} onClick={() => scegliAnno(prossimo.annoId)}>{t('prossimoApri', { periodo: prossimo.etichetta })}</button>
+          {esitoMessaggio}
+        </div>
+      );
+    }
     return (
       <div>
         <p className="font-maven text-sm text-kidville-green">{annullato ? t('statoAnnullato') : t('nessunaAnteprima')}</p>
@@ -434,7 +480,12 @@ function Passaggio({ annoSedeId, puoCalcolare, inPreparazione }: { annoSedeId: s
           aria-label={t('riquadroNonRispostoTitolo')}
           className="mt-3 rounded-input border-2 border-kidville-yellow bg-kidville-yellow-soft px-4 py-3 font-maven text-sm text-kidville-ink"
         >
-          <p className="m-0 font-semibold">{t('riquadroNonRisposto', { n: esiti?.non_risposto ?? 0 })}</p>
+          {/* (F3-2) Cosa si può fare e fino a quando: la data è quella del programma (`apribile_dal`), citata solo se non è ancora arrivata. */}
+          <p className="m-0 font-semibold">
+            {nonAncora && passaggio.apribile_dal
+              ? t('riquadroNonRisposto', { n: esiti?.non_risposto ?? 0, dal: giorno(passaggio.apribile_dal) })
+              : t('riquadroNonRispostoSenzaData', { n: esiti?.non_risposto ?? 0 })}
+          </p>
           <p className="m-0 mt-2">
             <Link href={PERCORSO_CONFERME} className="font-semibold underline underline-offset-2">{t('riquadroVaiAConferme')}</Link>
           </p>
@@ -509,12 +560,21 @@ function Passaggio({ annoSedeId, puoCalcolare, inPreparazione }: { annoSedeId: s
         />
       </div>
       <p className={hint}>{t('totaleBambini', { totale })}</p>
-      {inAnteprima && <p className={hint}>{t('cambiaGradoNota')}</p>}
-      {/* Chi continua tiene il NOME della classe di quest'anno (la 1A resta 1A): chi si aspetta la 2A deve sapere dove cambiarlo. */}
+      {/* (F3-5) Una frase sola; la spiegazione di come si segna la primaria sta in un «Perché?» chiuso. */}
+      {inAnteprima && (
+        <>
+          <p className={hint}>{t('cambiaGradoNota')}</p>
+          <details className={hint}>
+            <summary className="cursor-pointer">{t('cambiaGradoPerche')}</summary>
+            <p className="m-0 mt-1">{t('cambiaGradoDettaglio')}</p>
+          </details>
+        </>
+      )}
+      {/* Chi continua tiene il NOME della classe di quest'anno (la 1A resta 1A): chi si aspetta la 2A deve sapere dove cambiarlo, col percorso a parole. */}
       {inAnteprima && (
         <p className={hint}>
           {t('continuaNota')}{' '}
-          <Link href={PERCORSO_SEZIONI} className="underline underline-offset-2">{t('continuaNotaLink')}</Link>.
+          <Link href={PERCORSO_SEZIONI} className="underline underline-offset-2">{t('continuaNotaLink')}</Link>
         </p>
       )}
       {inAnteprima && (
@@ -556,7 +616,7 @@ function Passaggio({ annoSedeId, puoCalcolare, inPreparazione }: { annoSedeId: s
       )}
 
       {inAnteprima && (
-        <PannelloDocenti t={t} docenti={docenti} staff={staff} sezioni={sezioni} nomeSezione={nomeSezione} occupato={occupato} imposta={impostaDocente} />
+        <PannelloDocenti t={t} docenti={docenti} staff={staff} personale={personale} personalePronto={staffLetto.fase === 'ok'} personaleErrore={staffLetto.fase === 'errore'} riprovaPersonale={() => setVersioneStaff((v) => v + 1)} sezioni={sezioni} nomeSezione={nomeSezione} occupato={occupato} imposta={impostaDocente} />
       )}
 
       <Modal open={dialogo === 'conferma'} onClose={() => setDialogo(null)} title={t('dialogoConfermaTitolo')}>
@@ -732,11 +792,18 @@ function BloccoDaDecidere({
 }
 
 function PannelloDocenti({
-  t, docenti, staff, sezioni, nomeSezione, occupato, imposta,
+  t, docenti, staff, personale, personalePronto, personaleErrore, riprovaPersonale, sezioni, nomeSezione, occupato, imposta,
 }: {
   t: T;
   docenti: DocenteApi[];
+  /** Per la tendina «aggiungi»: il personale della sede dell'anno. */
   staff: Staff[];
+  /** Per i NOMI: tutto il personale che la route ha dato (un docente di un'altra sede ha comunque il suo nome). */
+  personale: Staff[];
+  personalePronto: boolean;
+  /** La lettura del personale è fallita: i nomi non si sanno, e non si dice che i docenti «non ci sono». */
+  personaleErrore: boolean;
+  riprovaPersonale: () => void;
   sezioni: Sezione[];
   nomeSezione: (id: string | null) => string | null;
   occupato: boolean;
@@ -746,14 +813,24 @@ function PannelloDocenti({
   const [utente, setUtente] = useState('');
   const [sezione, setSezione] = useState('');
   const nomeStaff = (uid: string): string => {
-    const s = staff.find((x) => x.id === uid);
-    return (s ? `${s.nome ?? ''} ${s.cognome ?? ''}`.trim() : '') || t('docenteSenzaNome');
+    // Tre casi, tre frasi: elenco ancora in arrivo («…»), docente non nell'elenco, docente nell'elenco ma senza nome (da completare in anagrafica).
+    if (personaleErrore) return t('docenteNomeNonLetto');
+    if (!personalePronto) return '…';
+    const s = personale.find((x) => x.id === uid);
+    if (!s) return t('docenteNonInElenco');
+    return `${s.nome ?? ''} ${s.cognome ?? ''}`.trim() || t('docenteSenzaNome');
   };
   const origineTesto = (o: DocenteApi['origine']) => (o === 'copiata' ? t('docenteCopiata') : o === 'aggiunta' ? t('docenteAggiunta') : t('docenteTolta'));
   return (
     <section aria-labelledby={`${id}-titolo`} className="mt-6 rounded-input border border-kidville-line p-3">
       <h2 id={`${id}-titolo`} className="m-0 font-barlow text-sm font-extrabold uppercase text-kidville-green">{t('docentiTitolo')}</h2>
       <p className={hint}>{t('docentiNota')}</p>
+      {personaleErrore && (
+        <div role="alert" className="mt-2 flex flex-wrap items-center gap-3 font-maven text-sm text-kidville-error">
+          <span>{t('personaleErrore')}</span>
+          <button type="button" className={secondario} onClick={riprovaPersonale}>{t('riprova')}</button>
+        </div>
+      )}
       {docenti.length === 0 ? (
         <p className={hint}>{t('docentiVuoto')}</p>
       ) : (

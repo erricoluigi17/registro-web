@@ -62,6 +62,7 @@ const s = {
   spunteConferma: [] as string[], // moduli spuntati sulla frequenza N1 (conferma) — il secondo cambia lo stato
   confermato: true,
   rifiutaModulo: false,
+  confermaRifiutata: false, // il POST di conferma risponde 422
   elencoVuotoDopoSpunta: false,
   letturaElencoCade: false, // la rilettura dell'elenco risponde 503 (la rete cade dopo un incasso)
   spuntato: false,
@@ -81,6 +82,8 @@ const s = {
   vociNonLette: false, // la route non ha saputo leggere le voci da incassare
   senzaVoce: false, // la riga «da pagare» non trova la sua voce
   statoForzato: undefined as string | null | undefined, // lo stato della frequenza nuova che la route risponde (null = non viva)
+  altri: [] as Array<[string, string]>, // terzo lotto (F2): altri bambini «non ha risposto» nell'elenco, [nome, cognome]
+  giaConfermati: 0, // terzo lotto (F2): quanti altri bambini hanno già confermato (contano solo nel totale di «Tutti»)
 }
 const PAG_QUOTA = '44444444-4444-4444-8444-444444444444'
 const fetchMock = vi.fn()
@@ -97,6 +100,12 @@ const rigaConferma = () => ({
   ...(s.statoForzato !== undefined ? { stato_frequenza: s.statoForzato } : {}),
   ...(s.nonRinnovaMotivo !== undefined ? { conferma: 'no', non_rinnova_motivo: s.nonRinnovaMotivo, nuova_frequenza_id: null, stato_frequenza: null } : {}),
 })
+const righeAltri = () =>
+  s.altri.map(([nome, cognome], i) => ({
+    frequenza_id: `c${i}c${i}c${i}c${i}-c${i}c${i}-4c${i}c-8c${i}c-c${i}c${i}c${i}c${i}c${i}c${i}c${i}c${i}c${i}c${i}c${i}c${i}`, alunno_id: `b${i}b${i}b${i}b${i}-b${i}b${i}-4b${i}b-8b${i}b-b${i}b${i}b${i}b${i}b${i}b${i}b${i}b${i}b${i}b${i}b${i}b${i}`,
+    section_id: null, conferma: 'non_risposto', nuova_frequenza_id: null, nuova_section_id: null, non_rinnova_motivo: null,
+    moduli: { fatti: 0, richiesti: 2 }, quota: 'assente', cambia_grado: false, stato_frequenza: null, nome, cognome, classe: 'Sezione Prova',
+  }))
 const rigaNuova = () => ({
   frequenza_id: F_NUOVA_ARRIVO, alunno_id: AL2, section_id: null, conferma: 'confermato', nuova_frequenza_id: F_NUOVA_ARRIVO, nuova_section_id: null,
   non_rinnova_motivo: null, moduli: { fatti: 0, richiesti: 2 }, quota: s.quotaArrivo, cambia_grado: false,
@@ -130,6 +139,7 @@ function risposta(url: string, metodo: string, body: Record<string, unknown>): R
     s.quota = s.quotaPost === 'creata' ? 'da_pagare' : 'assente'
     return ok({ frequenza_id: F_NUOVA, quota: s.quotaPost, pagamento_id: null })
   }
+  if (url.includes(`/api/admin/anni/${ANNO}/conferme`) && metodo === 'POST' && s.confermaRifiutata) return { status: 422, body: { error: 'Non si può.' } }
   if (url.includes(`/api/admin/anni/${ANNO}/conferme`) && metodo === 'POST') {
     s.confermata = true
     s.quota = s.quotaPost === 'creata' ? 'da_pagare' : 'assente'
@@ -143,9 +153,12 @@ function risposta(url: string, metodo: string, body: Record<string, unknown>): R
     if (vista === 'nuove' && s.nuoveVuote) return ok({ righe: [], pagina: 1, limite: 100, totale: 0, posti: [] })
     if (vista === 'nuove') return ok({ righe: [rigaNuova()], pagina: 1, limite: 100, totale: 1, posti: [] })
     // il filtro «non hanno risposto» dopo la conferma non ha più nessuno; «mancano moduli» dopo l'ultima spunta nemmeno
-    if (filtro === 'non_risposto') return s.confermata ? ok({ righe: [], pagina: 1, limite: 100, totale: 0, posti: [] }) : ok({ righe: [{ ...rigaConferma(), conferma: 'non_risposto', nuova_frequenza_id: null }], pagina: 1, limite: 100, totale: 1, posti: [] })
+    if (filtro === 'non_risposto') {
+      const righe = s.confermata ? righeAltri() : [{ ...rigaConferma(), conferma: 'non_risposto', nuova_frequenza_id: null }, ...righeAltri()]
+      return ok({ righe, pagina: 1, limite: 100, totale: righe.length, posti: [] })
+    }
     if (filtro === 'mancano_moduli') return s.elencoVuotoDopoSpunta ? ok({ righe: [], pagina: 1, limite: 100, totale: 0, posti: [] }) : ok({ righe: [rigaConferma()], pagina: 1, limite: 100, totale: 1, posti: [] })
-    return ok({ righe: [rigaConferma()], pagina: 1, limite: 100, totale: 1, posti: [], voci_non_lette: s.vociNonLette })
+    return ok({ righe: [rigaConferma(), ...righeAltri()], pagina: 1, limite: 100, totale: 1 + s.altri.length + s.giaConfermati, posti: [], voci_non_lette: s.vociNonLette })
   }
   if (url.includes('/moduli') && metodo === 'GET') {
     return ok({
@@ -185,6 +198,7 @@ beforeEach(() => {
   q.query = ''
   s.quotaRitiro = 'tolta'
   s.rifiutaModulo = false
+  s.confermaRifiutata = false
   s.elencoVuotoDopoSpunta = false
   s.letturaElencoCade = false
   s.nonRinnovaMotivo = undefined
@@ -194,6 +208,8 @@ beforeEach(() => {
   s.vociNonLette = false
   s.senzaVoce = false
   s.statoForzato = undefined
+  s.altri = []
+  s.giaConfermati = 0
   h.anno = { effettivo: { annoSedeId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', attivo: false, stato: 'iscrizioni_aperte' } }
   fetchMock.mockImplementation((url: string, init?: { method?: string; body?: string }) => {
     const r = risposta(String(url), init?.method ?? 'GET', init?.body ? JSON.parse(init.body) : {})
@@ -1071,5 +1087,170 @@ describe('ConfermeClient · E4 · l’incasso dalla riga', () => {
     expect(conferma.textContent).toContain('Pagamento saldato')
     expect(within(conferma).queryByRole('button')).toBeNull()
     expect(within(finestra).getByText(/si può fare anche più tardi/i)).toBeInTheDocument()
+  })
+})
+
+// =============================================================================
+// TERZO LOTTO · F2 — dove resta la segretaria dopo un clic, la ricerca, il pannello Documenti in vista, il filtro che si vede.
+// jsdom non calcola il layout: la posizione delle righe è finta (`getBoundingClientRect` la dichiara) e si prova che la pagina
+// la COMPENSA (scrollBy) e che il fuoco resta sulla riga, non che il browser scorra davvero. Nomi inventati.
+// =============================================================================
+describe('ConfermeClient — terzo lotto, F2', () => {
+  const NOMI: Array<[string, string]> = [['Èlia', 'Bianchi'], ['Marco', 'Verdi'], ['Anna', 'Neri']]
+
+  describe('dopo un clic la segretaria resta sulla riga su cui ha lavorato', () => {
+    let scrollBy: ReturnType<typeof vi.spyOn>
+    let deriva = 0 // di quanto la pagina si è mossa per conto suo (altro contenuto): il layout finto lo somma
+    beforeEach(() => {
+      deriva = 0
+      scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {})
+      // La riga sta a 200 px dall'alto; quando compare il messaggio d'esito sopra la tabella scende di 60 px (layout finto).
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const sotto = document.querySelector('[data-esito-conferme]') ? 60 : 0
+        const top = this.hasAttribute('data-riga-id') ? 200 + sotto + deriva : 0
+        return { top, bottom: top + 40, left: 0, right: 0, width: 0, height: 40, x: 0, y: top, toJSON: () => ({}) } as DOMRect
+      })
+    })
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('«Conferma»: il messaggio sposta la riga, la pagina la riporta dov\'era e il fuoco passa alla riga (il pulsante è sparito)', async () => {
+      s.confermato = false
+      s.altri = NOMI
+      render(<ConfermeClient />)
+      await screen.findByText('NomeProva CognomeProva')
+      const riga = rigaDi('NomeProva CognomeProva')
+      fireEvent.click(within(riga).getByRole('button', { name: itConferme.azioneConferma }))
+      await screen.findByRole('status', { name: itConferme.esitoRegione })
+      await waitFor(() => expect(scrollBy).toHaveBeenCalledWith({ top: 60 }))
+      await waitFor(() => expect(document.activeElement).toBe(rigaDi('NomeProva CognomeProva')))
+    })
+
+    it('l\'àncora si consuma: dopo l\'operazione la compensazione avviene, un render in più (scrivere nella ricerca) non sposta più né pagina né fuoco', async () => {
+      s.confermato = false
+      s.altri = NOMI
+      render(<ConfermeClient />)
+      await screen.findByText('NomeProva CognomeProva')
+      fireEvent.click(within(rigaDi('NomeProva CognomeProva')).getByRole('button', { name: itConferme.azioneConferma }))
+      await screen.findByRole('status', { name: itConferme.esitoRegione })
+      await waitFor(() => expect(scrollBy).toHaveBeenCalledWith({ top: 60 }))
+      // la rilettura arriva (la riga è ora «confermata»: niente più pulsante Conferma)
+      await waitFor(() => expect(within(rigaDi('NomeProva CognomeProva')).queryByRole('button', { name: itConferme.azioneConferma })).toBeNull())
+      await new Promise((r) => setTimeout(r, 50))
+      const prima = scrollBy.mock.calls.length
+      expect(prima).toBeGreaterThan(0)
+      // la segretaria porta il fuoco altrove (body) e scrive nella ricerca: la pagina resta com'è
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      fireEvent.change(screen.getByRole('searchbox', { name: itConferme.cercaEtichetta }), { target: { value: 'e' } })
+      fireEvent.change(screen.getByRole('searchbox', { name: itConferme.cercaEtichetta }), { target: { value: 'el' } })
+      expect(scrollBy.mock.calls.length).toBe(prima)
+      expect(document.activeElement === document.body).toBe(true)
+    })
+
+    it('se l\'operazione FALLISCE l\'àncora si consuma subito: un cambio di filtro dopo non sposta la pagina con una posizione vecchia', async () => {
+      s.confermato = false
+      s.altri = NOMI
+      s.confermaRifiutata = true
+      render(<ConfermeClient />)
+      await screen.findByText('NomeProva CognomeProva')
+      fireEvent.click(within(rigaDi('NomeProva CognomeProva')).getByRole('button', { name: itConferme.azioneConferma }))
+      await screen.findByRole('alert', { name: itConferme.esitoRegione })
+      await waitFor(() => expect(scrollBy).toHaveBeenCalledWith({ top: 60 }))
+      const prima = scrollBy.mock.calls.length
+      deriva = 500 // la pagina intanto è cambiata: la posizione ricordata è vecchia
+      fireEvent.click(screen.getByRole('button', { name: itConferme.filtroNonRisposto }))
+      await waitFor(() => expect(chiamate('GET', '/conferme?').some(([url]) => String(url).includes('conferma=non_risposto'))).toBe(true))
+      await screen.findByText('Marco Verdi')
+      await new Promise((r) => setTimeout(r, 50))
+      expect(scrollBy.mock.calls.length).toBe(prima)
+    })
+
+    it('con un filtro che fa uscire la riga dopo «Conferma»: il fuoco passa alla riga che le sta sotto, nello stesso punto', async () => {
+      s.confermato = false
+      s.altri = NOMI
+      q.query = 'conferma=non_risposto'
+      render(<ConfermeClient />)
+      await screen.findByText('NomeProva CognomeProva')
+      const riga = rigaDi('NomeProva CognomeProva')
+      fireEvent.click(within(riga).getByRole('button', { name: itConferme.azioneConferma })) // dopo la conferma la riga esce dal filtro
+      await screen.findByRole('status', { name: itConferme.esitoRegione })
+      await waitFor(() => expect(screen.queryByText('NomeProva CognomeProva')).toBeNull())
+      await waitFor(() => expect(scrollBy).toHaveBeenCalledWith({ top: 60 }))
+      await waitFor(() => expect(document.activeElement).toBe(rigaDi('Èlia Bianchi')))
+    })
+  })
+
+  describe('«Cerca un bambino»', () => {
+    it('filtra per nome e cognome, senza accenti né maiuscole, anche con cognome prima del nome', async () => {
+      s.altri = NOMI
+      render(<ConfermeClient />)
+      await screen.findByText('NomeProva CognomeProva')
+      const campo = screen.getByRole('searchbox', { name: itConferme.cercaEtichetta })
+      fireEvent.change(campo, { target: { value: 'ELIA' } })
+      expect(screen.getByText('Èlia Bianchi')).toBeInTheDocument()
+      expect(screen.queryByText('Marco Verdi')).toBeNull()
+      expect(screen.queryByText('NomeProva CognomeProva')).toBeNull()
+      fireEvent.change(campo, { target: { value: 'verdi marco' } })
+      expect(screen.getByText('Marco Verdi')).toBeInTheDocument()
+      expect(screen.queryByText('Èlia Bianchi')).toBeNull()
+      fireEvent.change(campo, { target: { value: 'zzz' } })
+      expect(screen.getByText(itConferme.cercaNessuno)).toBeInTheDocument()
+      fireEvent.change(campo, { target: { value: '' } })
+      expect(screen.getByText('Anna Neri')).toBeInTheDocument()
+      expect(screen.getByText('NomeProva CognomeProva')).toBeInTheDocument()
+    })
+
+    it('va d\'accordo con il filtro delle conferme: insieme, non uno al posto dell\'altro', async () => {
+      s.altri = NOMI
+      q.query = 'conferma=non_risposto'
+      s.confermato = false
+      render(<ConfermeClient />)
+      await screen.findByText('Marco Verdi')
+      fireEvent.change(screen.getByRole('searchbox', { name: itConferme.cercaEtichetta }), { target: { value: 'anna' } })
+      expect(screen.getByText('Anna Neri')).toBeInTheDocument()
+      expect(screen.queryByText('Marco Verdi')).toBeNull()
+      expect(chiamate('GET', '/conferme?').some(([url]) => String(url).includes('conferma=non_risposto'))).toBe(true)
+    })
+  })
+
+  describe('il pannello «Documenti» si porta in vista', () => {
+    it('all\'apertura scorre fino al pannello e il fuoco va al suo titolo', async () => {
+      const scrollIntoView = vi.fn()
+      Object.defineProperty(Element.prototype, 'scrollIntoView', { value: scrollIntoView, configurable: true, writable: true })
+      try {
+        await montaConPannelloAperto()
+        const titolo = screen.getByRole('heading', { name: /NomeProva CognomeProva/ })
+        expect(titolo.textContent).toBe(itConferme.moduliTitolo.replace('{nome}', 'NomeProva CognomeProva'))
+        expect(document.activeElement).toBe(titolo)
+        expect(scrollIntoView).toHaveBeenCalled()
+        const chiamato = scrollIntoView.mock.contexts as Element[]
+        expect(chiamato.some((el) => el.contains(titolo))).toBe(true) // lo scorrimento è sul pannello, non su un'altra cosa
+      } finally {
+        delete (Element.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView
+      }
+    })
+  })
+
+  describe('il filtro attivo si vede', () => {
+    it('arrivando con un filtro: «Stai vedendo: Non hanno risposto (2 bambini su 5)» e «Mostra tutti» lo toglie', async () => {
+      s.confermato = false
+      s.altri = [NOMI[0]]
+      s.giaConfermati = 3
+      q.query = 'conferma=non_risposto'
+      render(<ConfermeClient />)
+      await screen.findByText('NomeProva CognomeProva')
+      const riga = await screen.findByTestId('filtro-attivo')
+      await waitFor(() => expect(riga).toHaveTextContent('Stai vedendo: Non hanno risposto (2 bambini su 5)'))
+      fireEvent.click(within(riga).getByRole('button', { name: itConferme.mostraTutti }))
+      await waitFor(() => expect(screen.queryByTestId('filtro-attivo')).toBeNull())
+      expect(chiamate('GET', '/conferme?').some(([url]) => String(url).includes('conferma=tutti'))).toBe(true)
+    })
+
+    it('senza filtro la riga non c\'è', async () => {
+      render(<ConfermeClient />)
+      await screen.findByText('NomeProva CognomeProva')
+      expect(screen.queryByTestId('filtro-attivo')).toBeNull()
+    })
   })
 })

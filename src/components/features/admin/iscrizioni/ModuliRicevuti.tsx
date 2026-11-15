@@ -875,6 +875,7 @@ export function ModuliRicevuti() {
                 // abbinamento come primo argomento, e il clic gli darebbe il MouseEvent.
                 onImport={() => doImport()}
                 rettaFacoltativa={etichettaFuoriAnno(selected) !== null}
+                annoRetta={etichettaFuoriAnno(selected)}
                 erroreImport={erroreImport}
                 erroriCampo={erroriCampo}
                 onUsaSchedaEsistente={(proposta) => doImport(proposta)}
@@ -907,7 +908,7 @@ function DetailPanel({
   rette, setRette, retteACarico, setRetteACarico,
   intestatari, setIntestatari, giorniScadenza, setGiorniScadenza,
   referenteIndex, setReferenteIndex,
-  rettaFacoltativa, erroreImport, erroriCampo,
+  rettaFacoltativa, annoRetta, erroreImport, erroriCampo,
   working, result, onImport, onUsaSchedaEsistente, onReject, onViewDoc, docBloccato, onBack,
 }: {
   row: SubmissionRow
@@ -937,6 +938,8 @@ function DetailPanel({
   onImport: () => void
   /** Domanda per un anno non ancora in corso: retta vuota = retta del listino di quell'anno. */
   rettaFacoltativa: boolean
+  /** `2027/28`: l'anno della domanda quando è futuro. Serve a dire QUALE retta vale con il campo vuoto. */
+  annoRetta: string | null
   erroreImport: string | null
   erroriCampo: Record<string, { classe?: boolean; retta?: boolean }>
   /** Ripete l'import riusando la scheda proposta da un `POSSIBILE_DOPPIONE`. */
@@ -1130,9 +1133,16 @@ function DetailPanel({
                         onChange={e => setRette({ ...rette, [String(i)]: e.target.value })}
                         placeholder={rettaFacoltativa ? t('ricevutiRettaPlaceholderListino') : t('ricevutiRettaPlaceholder')}
                         aria-invalid={erroriCampo[String(i)]?.retta ? true : undefined}
-                        aria-describedby={erroriCampo[String(i)]?.retta ? `ricevuti-retta-err-${i}` : undefined}
+                        aria-describedby={erroriCampo[String(i)]?.retta ? `ricevuti-retta-err-${i}` : (rettaFacoltativa && annoRetta ? `ricevuti-retta-nota-${i}` : undefined)}
                         className={`w-full mt-1 px-3 py-2 rounded-lg border text-sm bg-white focus:outline-none focus:border-kidville-green disabled:bg-kidville-cream disabled:text-kidville-sub ${erroriCampo[String(i)]?.retta ? 'border-kidville-error' : 'border-kidville-line'}`}
                       />
+                      {/* Terzo giro (15/11): «se lascio vuoto, la retta sarà 300 € come ho impostato? Non lo dice».
+                          Il listino per anno non è nei dati già letti qui (e una route nuova non si fa): si dice DOVE sta. */}
+                      {rettaFacoltativa && annoRetta && (
+                        <p id={`ricevuti-retta-nota-${i}`} className="mt-1 text-xs text-kidville-sub">
+                          {t('ricevutiRettaVuotaAnno', { anno: annoRetta })}
+                        </p>
+                      )}
                       {erroriCampo[String(i)]?.retta && (
                         <p id={`ricevuti-retta-err-${i}`} className="mt-1 text-xs font-semibold text-kidville-error">
                           {t('ricevutiErroreRettaMancante')}
@@ -1333,14 +1343,18 @@ function DetailPanel({
       )}
       {!done && (
         <div className="flex items-center gap-3 pt-2 border-t border-kidville-line">
-          <button
-            onClick={onImport}
-            disabled={working}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-kidville-green text-kidville-yellow font-semibold text-sm hover:opacity-90 disabled:opacity-50 transition-all"
-          >
-            {working ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-            {t('ricevutiImporta')}
-          </button>
+          <div className="flex-1">
+            <button
+              onClick={onImport}
+              disabled={working}
+              aria-describedby="ricevuti-importa-desc"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-kidville-green text-kidville-yellow font-semibold text-sm hover:opacity-90 disabled:opacity-50 transition-all"
+            >
+              {working ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+              {t('ricevutiImporta')}
+            </button>
+            <p id="ricevuti-importa-desc" className="mt-1 text-center text-xs text-kidville-sub">{t('ricevutiImportaDesc')}</p>
+          </div>
           <button
             onClick={onReject}
             disabled={working}

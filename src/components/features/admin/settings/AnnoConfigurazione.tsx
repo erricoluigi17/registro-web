@@ -24,7 +24,7 @@ import { btnPrimary, hint, input, label } from './ui';
  *  · Nel messaggio di un rifiuto passano solo parole del catalogo: mai righe di bambini (qui non ce ne sono).
  */
 
-type Scheda = 'quote' | 'rette' | 'moduli' | 'posti';
+export type Scheda = 'quote' | 'rette' | 'moduli' | 'posti';
 type Lista = 'conferma' | 'nuova';
 type VoceQuota = 'quota_conferma' | 'quota_nuova';
 
@@ -146,9 +146,18 @@ export function AnnoConfigurazione({
   annoEtichetta,
   onCambiata,
   riletturaEsterna = 0,
+  schedaIniziale,
+  scorriAlBlocco = false,
+  annoPrecedenteSedeId = null,
 }: {
   userId: string;
   annoSedeId: string;
+  /** La scheda con cui si apre il blocco (una tappa della home: «Documenti da consegnare» apre «Documenti»). Senza: «Quote». */
+  schedaIniziale?: Scheda;
+  /** `anni_sede.id` dell'anno prima della stessa sede, se c'è: serve a dire che la retta è identica a quella dell'anno scorso. */
+  annoPrecedenteSedeId?: string | null;
+  /** Una tappa della home ha portato qui: all'apertura la pagina scorre fino a questo blocco (la pagina si apre in cima, con le date). */
+  scorriAlBlocco?: boolean;
   /** Sale quando chi sta sopra ha cambiato qualcosa senza passare da qui (l'apertura delle iscrizioni copia le classi): gli elenchi si rileggono. */
   riletturaEsterna?: number;
   /** Tutti gli stati: con le iscrizioni non ancora aperte o aperte c'è tutta la configurazione, per l'anno in corso la sola retta
@@ -161,7 +170,11 @@ export function AnnoConfigurazione({
 }) {
   const t = useTranslations('annoListino');
   const base = `/api/admin/anni/${annoSedeId}`;
-  const [scheda, setScheda] = useState<Scheda>('quote');
+  const [scheda, setScheda] = useState<Scheda>(schedaIniziale ?? 'quote');
+  // L'importo della retta è stato cambiato e salvato da questa schermata: l'avviso «stesso importo dell'anno scorso» non serve più (vive qui,
+  // non nella scheda, che si smonta cambiando scheda). «Togli» e il salvataggio dei soli mesi non lo spengono.
+  const [retteConfermate, setRetteConfermate] = useState(false);
+  const blocco = useRef<HTMLFieldSetElement>(null);
   const [versione, setVersione] = useState(0);
   const [inCorso, setInCorso] = useState<string | null>(null);
   const [esito, setEsito] = useState<EsitoUi | null>(null);
@@ -175,6 +188,11 @@ export function AnnoConfigurazione({
     };
   }, []);
 
+  // Si arriva da una tappa della home: la pagina si apre in cima (le date) e questo blocco sta molto più in basso, quindi si scorre fin qui.
+  // Una volta sola, all'arrivo. `?.` perché jsdom non ha `scrollIntoView`.
+  useEffect(() => {
+    if (scorriAlBlocco) blocco.current?.scrollIntoView?.({ block: 'start' });
+  }, [scorriAlBlocco]);
   /**
    * Una scrittura: segna «in corso» su un'area, chiama, mostra l'esito sotto quell'area, rilegge l'elenco e avvisa chi sta sopra.
    * Restituisce `true` se il server ha detto di sì (chi chiama svuota allora il proprio modulo).
@@ -241,7 +259,7 @@ export function AnnoConfigurazione({
   };
 
   const soloLettura = stato === 'in_chiusura' || stato === 'chiuso';
-  const comuni = { userId, base, versione: versione + riletturaEsterna, inCorso, scrivi, esitoDi, fasciaNome, setEsito, soloLettura, stato, annoEtichetta };
+  const comuni = { userId, base, versione: versione + riletturaEsterna, inCorso, scrivi, esitoDi, fasciaNome, setEsito, soloLettura, stato, annoEtichetta, retteConfermate, confermaRette: () => setRetteConfermate(true), annoPrecedenteSedeId };
 
   // Anno in corso, in chiusura o chiuso: del listino resta la sola retta (le quote, i moduli e i posti li rifiuta il server).
   if (stato === 'corrente' || stato === 'in_chiusura' || stato === 'chiuso') {
@@ -255,7 +273,7 @@ export function AnnoConfigurazione({
   }
 
   return (
-    <fieldset className="mt-5 border-t border-kidville-line pt-4">
+    <fieldset ref={blocco} className="mt-5 scroll-mt-4 border-t border-kidville-line pt-4">
       <legend className={sottoTitolo}>{t('configurazioneTitolo')}</legend>
       <p className="font-maven text-sm text-kidville-sub">{t('introConfigurazione')}</p>
       {stato === 'iscrizioni_aperte' && <p className={hint}>{t('dopoApertura')}</p>}
@@ -292,6 +310,10 @@ type Comuni = {
   soloLettura: boolean;
   stato: string;
   annoEtichetta?: string;
+  /** Un importo diverso è stato salvato da questa schermata (l'avviso «stesso importo dell'anno scorso» non serve più). */
+  retteConfermate: boolean;
+  confermaRette: () => void;
+  annoPrecedenteSedeId: string | null;
   setEsito: (e: EsitoUi | null) => void;
 };
 
@@ -332,13 +354,13 @@ function SchedaQuote(c: Comuni) {
   return (
     <div>
       {(sceltaConferma === true || sceltaNuova === true) && <p className={hint}>{t('fasciaSpiega')}</p>}
-      <BloccoQuota c={c} voce="quota_conferma" titolo={t('quotaConfermaTitolo')} nota={t('quotaConfermaNota')} righe={righeDi('quota_conferma')} sceltaFascia={sceltaConferma} />
-      <BloccoQuota c={c} voce="quota_nuova" titolo={t('quotaNuovaTitolo')} nota={t('quotaNuovaNota')} righe={righeDi('quota_nuova')} sceltaFascia={sceltaNuova} />
+      <BloccoQuota c={c} voce="quota_conferma" titolo={t('quotaConfermaTitolo')} testoSalva={t('salvaQuotaConferma')} nota={t('quotaConfermaNota')} righe={righeDi('quota_conferma')} sceltaFascia={sceltaConferma} />
+      <BloccoQuota c={c} voce="quota_nuova" titolo={t('quotaNuovaTitolo')} testoSalva={t('salvaQuotaNuova')} nota={t('quotaNuovaNota')} righe={righeDi('quota_nuova')} sceltaFascia={sceltaNuova} />
     </div>
   );
 }
 
-function BloccoQuota({ c, voce, titolo, nota, righe, sceltaFascia }: { c: Comuni; voce: VoceQuota; titolo: string; nota: string; righe: RigaQuota[]; sceltaFascia: boolean | null }) {
+function BloccoQuota({ c, voce, titolo, testoSalva, nota, righe, sceltaFascia }: { c: Comuni; voce: VoceQuota; titolo: string; testoSalva: string; nota: string; righe: RigaQuota[]; sceltaFascia: boolean | null }) {
   const t = useTranslations('annoListino');
   const id = useId();
   const area = `quote-${voce}`;
@@ -413,7 +435,7 @@ function BloccoQuota({ c, voce, titolo, nota, righe, sceltaFascia }: { c: Comuni
           <input id={`${id}-scadenza`} type="date" value={scadenza} onChange={(e) => setScadenza(e.target.value)} aria-describedby={`${id}-scadenza-hint`} className={input} />
         </div>
         <button type="button" onClick={() => void salva()} disabled={occupato} className={btnPrimary}>
-          {c.inCorso === area ? t('salvataggioInCorso') : t('salva')}
+          {c.inCorso === area ? t('salvataggioInCorso') : testoSalva}
         </button>
       </div>
       <p id={`${id}-scadenza-hint`} className={hint}>{t('scadenzaNota')}</p>
@@ -436,6 +458,30 @@ function SchedaRette(c: Comuni) {
   const lettura = useLettura(`${c.base}/rette`, c.userId, c.versione, estraiRette);
   if (lettura.fase !== 'ok') return <StatoLettura lettura={lettura} testoErrore={(e) => (e.tipo === 'rete' ? t('erroreRete') : e.tipo === 'permesso' ? t('errorePermesso') : messaggioDaCorpo(e.tipo === 'risposta' ? e.corpo : null, t('erroreLettura')))} />;
   return <BloccoRetta c={c} dati={lettura.dati} />;
+}
+
+/**
+ * AVVISO «È lo stesso importo dell'anno scorso». «Se non leggo bene, lo lascio com'è» (prova del 15/11/2026): una retta identica a
+ * quella dell'anno prima (stessa voce, stessa fascia, stesso importo) è quasi sempre copiata e mai riguardata. Si legge il listino
+ * dell'anno prima con la stessa route; se manca o la lettura fallisce (`chiama` la registra) non si mostra niente. Mai un blocco.
+ */
+function AvvisoRettaUguale({ c, precedente, rette }: { c: Comuni; precedente: string; rette: RigaRetta[] }) {
+  const t = useTranslations('annoListino');
+  const prima = useLettura(`/api/admin/anni/${precedente}/rette`, c.userId, 0, estraiRette);
+  if (prima.fase !== 'ok') return null;
+  const uguale = rette.find(
+    (r) => r.importo !== null && prima.dati.rette.some((p) => p.voce === r.voce && p.fascia === r.fascia && p.importo === r.importo),
+  );
+  if (!uguale || uguale.importo === null) return null;
+  return (
+    <p
+      role="note"
+      data-avviso="retta-copiata"
+      className="mt-3 rounded-input border-2 border-kidville-warn bg-kidville-warn-soft px-3 py-2 font-maven text-sm font-semibold text-kidville-warn-strong"
+    >
+      {t('retteUgualeAnnoScorso', { importo: formatEuro(uguale.importo) })}
+    </p>
+  );
 }
 
 function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
@@ -492,9 +538,12 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
     // I mesi si scelgono solo per la riga «Tutte le fasce», e si mandano solo se sono cambiati: lasciati com'erano restano «come sempre».
     const perTutte = fascia === TUTTE;
     if (perTutte && mesi.length === 0) return c.setEsito({ area, tipo: 'errore', errore: { tipo: 'campo', chiave: 'mesi' } });
+    const importoCambiato = rette.find((r) => r.voce === 'retta' && r.fascia === (perTutte ? null : fascia))?.importo !== n;
     const mandaMesi = perTutte && !stessiMesi(mesi, mesiEffettivi);
     const corpo = { voce: 'retta', fascia: perTutte ? null : fascia, importo: n, ...(mandaMesi ? { mesi: [...mesi].sort((a, b) => a - b) } : {}) };
     const ok = await c.scrivi(area, 'PUT', `${c.base}/rette`, corpo, (d) => (d?.cambiato === false ? t('nessunaModifica') : c.annoEtichetta ? t('retteSalvataAnno', { anno: c.annoEtichetta }) : t('retteSalvata')));
+    // L'avviso si spegne solo se l'IMPORTO è cambiato (non «Togli», non i soli mesi).
+    if (ok && importoCambiato) c.confermaRette();
     // Salvata: con più fasce il modulo si richiude e resta l'elenco, con la retta com'è adesso.
     if (ok && !soloTutte && rette.length > 0) {
       setAperto(false);
@@ -526,9 +575,10 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
     setImporto(importoDi(f === TUTTE ? null : f));
   };
   const scegliMese = (m: number, acceso: boolean) => setMesi((prima) => (acceso ? [...prima, m] : prima.filter((x) => x !== m)));
-  // Un 150,00 è quasi sempre l'importo copiato dal listino precedente: una nota neutra, mai un blocco.
   // Solo mentre l'anno si prepara: sull'anno in corso o chiuso «controllalo» non ha caselle da toccare.
-  const copiata = (c.stato === 'in_preparazione' || c.stato === 'iscrizioni_aperte') && rette.some((r) => r.importo === 150);
+  // Il segnale vero è il confronto con l'anno prima della stessa sede (nessun importo scritto nel codice): lo fa `AvvisoRettaUguale`.
+  // Solo prima dell'apertura: il controllo serviva a quello.
+  const confrontaConAnnoPrima = !c.retteConfermate && c.stato === 'in_preparazione' && c.annoPrecedenteSedeId !== null;
   // Con più fasce la scelta si fa fra quelle che non hanno ancora una retta; cambiando una riga che c'è, la fascia è fissa.
   const sceltaFascia = !soloTutte && !inModifica;
 
@@ -537,7 +587,7 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
       <legend className={sottoTitolo}>{c.annoEtichetta && (c.stato === 'in_preparazione' || c.stato === 'iscrizioni_aperte') ? t('retteAnnoTitolo', { anno: c.annoEtichetta }) : t('retteTitolo')}</legend>
       <p className={hint}>{t('retteNota')}</p>
       <p className={hint}>{soloTutte ? t('retteSenzaFasce') : t('fasciaSpiega')}</p>
-      {copiata && <p className={hint}>{t('retteCopiata')}</p>}
+      {confrontaConAnnoPrima && c.annoPrecedenteSedeId && <AvvisoRettaUguale c={c} precedente={c.annoPrecedenteSedeId} rette={rette} />}
       {rette.length === 0 ? (
         <>
           <p className="mt-2 font-maven text-sm text-kidville-sub">{t('retteNessuna')}</p>
@@ -600,7 +650,7 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
               <input id={`${id}-importo`} type="text" inputMode="decimal" autoComplete="off" value={importo} onChange={(e) => setImporto(e.target.value)} className={`${input} w-32`} />
             </div>
             <button type="button" onClick={() => void salva()} disabled={occupato} className={btnPrimary}>
-              {c.inCorso === area ? t('salvataggioInCorso') : t('salva')}
+              {c.inCorso === area ? t('salvataggioInCorso') : t('salvaRetta')}
             </button>
             {soloTutte && rigaTutte !== null && (
               <button type="button" className={btnSecondario} disabled={occupato} onClick={() => void togli(rigaTutte)}>
@@ -714,7 +764,7 @@ function BloccoModuli({ c, lista, titolo, righe }: { c: Comuni; lista: Lista; ti
           <input id={`${id}-titolo`} type="text" maxLength={120} value={testo} onChange={(e) => setTesto(e.target.value)} className={`${input} w-full`} />
         </div>
         <button type="button" onClick={() => void salva()} disabled={occupato} className={btnPrimary}>
-          {c.inCorso === area ? t('salvataggioInCorso') : inModifica === null ? t('moduloAggiungi') : t('salva')}
+          {c.inCorso === area ? t('salvataggioInCorso') : inModifica === null ? t('moduloAggiungi') : t('salvaModuloTitolo')}
         </button>
         {inModifica !== null && (
           <button
@@ -782,8 +832,8 @@ function RigaFascia({ c, fascia, attuale }: { c: Comuni; fascia: Fascia; attuale
           <label htmlFor={`${id}-fonte`} className={label}>{t('postiFonteEtichetta')}</label>
           <input id={`${id}-fonte`} type="text" maxLength={200} value={fonte} onChange={(e) => setFonte(e.target.value)} className={`${input} w-full`} />
         </div>
-        <button type="button" onClick={salva} disabled={occupato} className={btnPrimary}>
-          {c.inCorso === area ? t('salvataggioInCorso') : t('salva')}
+        <button type="button" onClick={salva} disabled={occupato} aria-label={c.inCorso === area ? undefined : t('salvaPostiAria', { fascia: c.fasciaNome(fascia) })} className={btnPrimary}>
+          {c.inCorso === area ? t('salvataggioInCorso') : t('salvaPosti')}
         </button>
         {attuale && (
           <button type="button" className={btnSecondario} disabled={occupato} onClick={togli}>
@@ -828,7 +878,7 @@ function BloccoClassi({ c, stato }: { c: Comuni; stato: 'in_preparazione' | 'isc
         {lettura.fase !== 'ok' ? (
           <StatoLettura lettura={lettura} testoErrore={(e) => (e.tipo === 'rete' ? t('erroreRete') : e.tipo === 'permesso' ? t('errorePermesso') : messaggioDaCorpo(e.tipo === 'risposta' ? e.corpo : null, t('erroreLettura')))} />
         ) : lettura.dati.length === 0 ? (
-          <p className="mt-2 font-maven text-sm text-kidville-sub">{t('classiElencoVuoto')}</p>
+          <p className="mt-2 font-maven text-sm text-kidville-sub">{stato === 'in_preparazione' ? t('classiElencoVuotoPreparazione') : t('classiElencoVuoto')}</p>
         ) : (
           <>
             <p role="status" className={`mt-2 font-maven text-sm ${senzaFascia > 0 ? 'text-kidville-error' : 'text-kidville-success'}`}>

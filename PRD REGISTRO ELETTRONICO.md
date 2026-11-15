@@ -1,3 +1,45 @@
+## 🧭 Changelog — Anno scolastico, terzo lotto di semplificazioni dopo il terzo giro della segretaria inesperta (agente 2) — 2026-11-15 (ramo `feat/anno-semplificazioni-3`)
+
+**Perché.** Al terzo giro la segretaria inesperta ha preparato il 2027/28 in Demo senza bloccarsi: obiettivi tutti riusciti, voti da 1 a 3, giudizio «accettabile, vicino al semplice». Restavano piccoli difetti veri: testi che si contraddicono, una scheda che non si apre dove dovrebbe, la pagina che salta in cima, nessun segno di caricamento. Quattro lotti (F1-F4) li correggono. Nessuna migrazione, nessuna route nuova.
+
+- **F1 — Home «Prepara l'anno prossimo» e Impostazioni › Anno scolastico.**
+  - Al clic su una tappa compare subito «Un attimo…» (`role="status"`, `aria-busy`), con una rotellina e la riga evidenziata, grazie a `useLinkStatus` di `next/link`. Nessun `loading.tsx` alla radice.
+  - Le tappe portano `?tappa=quote|documenti|iscrizioni`: la pagina apre la scheda giusta («Documenti da consegnare» apre Documenti) e scorre fino al blocco «Quote, documenti, posti e classi».
+  - Ogni «Salva» dice cosa salva: le date, la fine dell'anno, la quota di conferma, la quota di iscrizione, la retta, il nuovo titolo, i posti.
+  - Una frase sola sulle classi: si copiano da sole all'apertura delle iscrizioni, e si possono copiare prima.
+  - «Le spunte già fatte dalla segreteria» (non più «dalle famiglie»).
+  - La scadenza della quota dice da quando contano i trenta giorni: da quando la domanda viene accolta o la conferma viene registrata.
+  - Se la retta dell'anno nuovo è uguale a quella dell'anno prima (stessa voce, stessa fascia, stesso importo, letta con la GET delle rette che c'era già), compare un avviso ben visibile vicino al campo, con l'importo vero: «Se va bene così, non devi fare niente. Se è cambiato, correggilo e premi «Salva la retta».». Compare solo mentre l'anno è in preparazione, e nella sessione sparisce quando si salva un importo diverso. Nessun importo è scritto nel codice.
+- **F2 — Conferme e avviso dell'anno.**
+  - Dopo Conferma / Non rinnova / Ritira / Annulla il no, la pagina resta sulla riga su cui si lavorava e il fuoco torna lì.
+  - Campo «Cerca un bambino» per nome e cognome, senza accenti e maiuscole, insieme ai filtri (cerca nella pagina in vista).
+  - Il pannello «Documenti» viene portato in vista all'apertura, con il fuoco sul suo titolo.
+  - Con un filtro attivo, una riga dice «Stai vedendo: Non hanno risposto (21 bambini su 25)» con «Mostra tutti».
+  - L'avviso dell'anno scelto è una riga sola: «Stai guardando l'anno prossimo (2027/28). L'anno in corso non cambia.» per l'anno subito dopo, «un anno passato» per quelli prima, e una frase neutra («Stai guardando il …») negli altri casi, anche senza un anno attivo. Il pulsante dice «Torna al 2026/27». Vale per tutte le pagine che lo usano.
+- **F3 — Passaggio d'anno.**
+  - Sull'anno in corso, la pagina dice che il passaggio si prepara sull'anno nuovo, dice se un'anteprima c'è già, e offre «Vai al passaggio su 2027/28».
+  - Etichette che non si contraddicono: «Escono: già deciso» (comprende i «no», i ritiri e la fine del ciclo) e «Non hanno risposto». L'avviso dice cosa si può fare e fino a quando, con la data vera del passaggio presa dal server.
+  - «Docente senza nome»: era un difetto del codice. I nomi si cercavano solo fra il personale della sede scelta nel selettore; ora si cercano in tutto il personale che `admin/staff` restituisce. Chi non c'è compare come «Docente non presente nell'elenco del personale». Se la lettura del personale fallisce, i nomi dicono «Nome non disponibile» e sopra l'elenco c'è «Non riesco a leggere i nomi del personale.» con «Riprova».
+  - Il nome della classe si cambia da Anagrafica › Sezioni › la classe › Rinomina: la frase lo dice con le parole che si vedono a schermo, con il link.
+  - «Cambiano grado» si spiega in una frase; il resto sta in un «Perché?» chiuso.
+- **F4 — Domande ricevute, link del modulo, modulo per le famiglie.**
+  - Il pulsante «Importa nelle anagrafiche» diventa «Accogli la domanda», con sotto «Il bambino entra nelle anagrafiche e la famiglia riceve le credenziali.». Gli altri testi della pagina seguono: «Domanda accolta», «Accoglienza non completata», «La domanda non è stata accolta», «Accolte», «Accolta» (anche nell'E2E `e2e/public-iscrizione.spec.ts`).
+  - Sotto la retta vuota: «Vuoto = la retta impostata in Impostazioni › Anno scolastico per il 2027/28», con l'anno vero della domanda. L'importo non si mostra: servirebbe una route nuova.
+  - «Moduli inviabili»: il link della sede viene per primo («Copia il link per {sede}»); l'altro è «Copia il link per tutte le sedi», con la nota che la famiglia sceglie la scuola nel modulo.
+  - Nel modulo pubblico, al passo dell'adulto, la casella «Stesso indirizzo del bambino» copia la residenza del primo bambino una volta, alla spunta. Togliere la spunta non cancella niente. I campi si riconoscono dalla mappatura del modello (`form_models`), con ripiego sull'id. Gli obblighi del modulo non cambiano.
+- **Revisione indipendente** (Sonnet, sul diff unito): nessun critico, 1 importante, 9 minori.
+  - **Importante, corretto:** l'avviso della retta uguale non aveva modo di spegnersi, scattava anche con «Togli» e con i mesi, e diceva «prima di aprire le iscrizioni» anche a iscrizioni aperte (vedi F1).
+  - **Minori corretti (5):** nelle Conferme la compensazione dello scorrimento si applica una volta per operazione e non a ogni render; l'avviso dell'anno ha la frase neutra; nel passaggio l'errore di lettura del personale non si traveste più da «docente non presente»; la spunta dell'indirizzo non cancella; i testi «import» diventano «accogliere».
+  - **Minori lasciati (4):** la riga «Stai vedendo» non conta la ricerca, che resta visibile nel suo campo; la ricerca guarda la pagina in vista e lo dice; `?tappa=` agisce all'apertura della pagina, che dalla home è sempre una navigazione nuova; le sei aree `role="status"` vuote della scheda della home sono innocue.
+- **Il gate** ha trovato un rosso nato dal lotto, corretto: due righe nuove di `ModuliRicevuti.tsx` usavano il colore di testo `muted` (`testo-muted-allowlist`), ora `text-kidville-sub`.
+
+**Non fatto / da decidere.**
+- L'importo della retta del listino accanto al campo vuoto delle domande: servirebbe una route nuova.
+- La ricerca delle Conferme guarda la pagina in vista (100 righe): la route non cerca per nome.
+- Il segno di caricamento e il «non salta più in cima» sono provati in jsdom; vanno visti nel browser dopo il deploy.
+
+---
+
 ## 🧭 Changelog — Anno scolastico, seconde semplificazioni dopo il secondo giro della segretaria inesperta (agente 2) — 2026-11-14 (ramo `feat/anno-semplificazioni-2`)
 
 **Perché.** Il secondo giro con la segretaria inesperta ha mostrato altri punti dove ci si ferma. Cinque lotti (E1-E5) li hanno semplificati, più una correzione trovata dopo l'unione dei rami.

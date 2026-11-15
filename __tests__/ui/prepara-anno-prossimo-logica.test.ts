@@ -174,9 +174,9 @@ describe('costruisciTappe', () => {
 describe('hrefTappa', () => {
   it('ogni tappa porta alla pagina vera', () => {
     const anno = { annoSedeId: NUOVO_A };
-    expect(hrefTappa('quote', anno)).toBe(`/admin/impostazioni?sezione=anno&anno_sede=${NUOVO_A}`);
-    expect(hrefTappa('documenti', anno)).toBe(`/admin/impostazioni?sezione=anno&anno_sede=${NUOVO_A}`);
-    expect(hrefTappa('iscrizioni', anno)).toBe(`/admin/impostazioni?sezione=anno&anno_sede=${NUOVO_A}`);
+    expect(hrefTappa('quote', anno)).toBe(`/admin/impostazioni?sezione=anno&anno_sede=${NUOVO_A}&tappa=quote`);
+    expect(hrefTappa('documenti', anno)).toBe(`/admin/impostazioni?sezione=anno&anno_sede=${NUOVO_A}&tappa=documenti`);
+    expect(hrefTappa('iscrizioni', anno)).toBe(`/admin/impostazioni?sezione=anno&anno_sede=${NUOVO_A}&tappa=iscrizioni`);
     expect(hrefTappa('conferme', anno)).toBe('/admin/students/conferme');
     expect(hrefTappa('puntoSituazione', anno)).toBe('/admin/students/anno-prossimo');
     expect(hrefTappa('passaggio', anno)).toBe('/admin/students/passaggio');

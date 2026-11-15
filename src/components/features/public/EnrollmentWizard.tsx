@@ -16,6 +16,7 @@ import {
 } from '@/lib/forms/enrollment-template'
 import { extractEnrollmentTemplates } from '@/lib/forms/enrollment-default-schema'
 import { LegendaObbligatori } from '@/components/features/public/wizard/pezzi-wizard-pubblico'
+import { coppieIndirizzo } from '@/components/features/public/wizard/indirizzo-adulto'
 import { useAnniPubblici } from '@/components/features/public/wizard/use-anni-pubblici'
 import { useInfoAnno } from '@/components/features/public/wizard/use-info-anno'
 import { InfoAnnoIscrizione } from '@/components/features/public/wizard/InfoAnnoIscrizione'
@@ -96,6 +97,8 @@ export function EnrollmentWizard({ scuolaId = null }: { scuolaId?: string | null
   const sedeDaLink = scuolaId !== null && scuolaId.trim().length > 0 ? scuolaId.trim() : null
   const [childCount, setChildCount] = useState(1)
   const [adultCount, setAdultCount] = useState(1)
+  /** Per ogni adulto (indice): la casella «Stesso indirizzo del bambino» è spuntata. */
+  const [stessoIndirizzo, setStessoIndirizzo] = useState<Record<number, boolean>>({})
   const [step, setStep] = useState(0)
   const [direction, setDirection] = useState(1)
   const [submitting, setSubmitting] = useState(false)
@@ -398,6 +401,17 @@ export function EnrollmentWizard({ scuolaId = null }: { scuolaId?: string | null
       setStep(primoStep)
     }
     return true
+  }
+
+  const coppieResidenza = useMemo(() => coppieIndirizzo(childFields, adultFields), [childFields, adultFields])
+
+  /** Alla spunta copia la residenza del PRIMO bambino nei campi dell'adulto, una volta sola. Togliere la spunta non cancella niente. */
+  function impostaStessoIndirizzo(indiceAdulto: number, attivo: boolean) {
+    setStessoIndirizzo((s) => ({ ...s, [indiceAdulto]: attivo }))
+    for (const { da, a } of coppieResidenza) {
+      if (!attivo) break
+      setValue(`adults.${indiceAdulto}.${a}`, getValues(`children.0.${da}`) ?? '', { shouldDirty: true, shouldValidate: false })
+    }
   }
 
   async function goNext() {
@@ -1078,6 +1092,17 @@ export function EnrollmentWizard({ scuolaId = null }: { scuolaId?: string | null
                         </div>
                       )}
                       <LegendaObbligatori campi={adultFields} />
+                      {coppieResidenza.length > 0 && (
+                        <label className="flex items-center gap-2 text-sm text-kidville-ink">
+                          <input
+                            type="checkbox"
+                            checked={!!stessoIndirizzo[current.index]}
+                            onChange={(e) => impostaStessoIndirizzo(current.index, e.target.checked)}
+                            className="h-4 w-4 accent-kidville-green"
+                          />
+                          {t('wizardStessoIndirizzo')}
+                        </label>
+                      )}
                       {nsFields(`adults.${current.index}`, adultFields).map(f => (
                         <FieldRenderer
                           key={f.id}
@@ -1103,7 +1128,7 @@ export function EnrollmentWizard({ scuolaId = null }: { scuolaId?: string | null
                           {adultCount > 1 && current.index === adultCount - 1 && (
                             <button
                               type="button"
-                              onClick={() => { setAdultCount(a => a - 1); setStep(s => Math.max(0, s - 1)) }}
+                              onClick={() => { setStessoIndirizzo((s) => ({ ...s, [current.index]: false })); setAdultCount(a => a - 1); setStep(s => Math.max(0, s - 1)) }}
                               className="flex items-center gap-2 px-3 py-2 rounded-xl text-kidville-sub hover:text-kidville-error text-sm transition-all"
                             >
                               <Trash2 className="w-4 h-4" /> {t('wizardRimuovi')}

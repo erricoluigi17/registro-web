@@ -14,6 +14,8 @@ import { SEDE_A, SEDE_B, NOME_SEDE_A } from '../fixtures/sedi';
 const NUOVO = 'a0000000-0000-4000-8000-0000000000a2';
 
 const ctx = vi.hoisted(() => ({
+  /** L'indirizzo di cui `useLinkStatus` dice «sta caricando» (null = nessuno). */
+  inCaricamento: null as string | null,
   sedi: [] as { id: string; nome: string }[],
   effettive: [] as string[],
   perSede: {} as Record<string, unknown>,
@@ -34,6 +36,21 @@ vi.mock('@/lib/context/anno-context', () => ({
 vi.mock('@/lib/context/admin-identity', () => ({
   useRuoloCockpit: () => ctx.ruolo,
 }));
+
+// `useLinkStatus` di Next dice «pending» dentro il `Link` che sta navigando: qui un Link finto lo simula per UN indirizzo.
+vi.mock('next/link', async () => {
+  const React = await import('react');
+  const Pending = React.createContext(false);
+  return {
+    default: ({ href, children, onClick, ...resto }: { href: string; children: React.ReactNode; onClick?: () => void } & Record<string, unknown>) =>
+      React.createElement(
+        Pending.Provider,
+        { value: ctx.inCaricamento === href },
+        React.createElement('a', { href, onClick, ...resto }, children),
+      ),
+    useLinkStatus: () => ({ pending: React.useContext(Pending) }),
+  };
+});
 
 import { PreparaAnnoProssimo } from '@/components/features/admin/home/PreparaAnnoProssimo';
 
@@ -90,6 +107,7 @@ beforeEach(() => {
   ctx.perSede = { [SEDE_A]: calendario('in_preparazione') };
   ctx.ruolo = 'segreteria';
   ctx.selezionato = null;
+  ctx.inCaricamento = null;
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -142,10 +160,11 @@ describe('PreparaAnnoProssimo — i link', () => {
     render(<PreparaAnnoProssimo userId="u1" withUser={withUser} />);
     await screen.findByRole('heading', { name: /prepara l’anno prossimo/i });
     const href = (nome: string) => screen.getByRole('link', { name: nome }).getAttribute('href');
-    const impostazioni = `/admin/impostazioni?sezione=anno&anno_sede=${NUOVO}&userId=u1`;
-    expect(href('Apri: Quote e retta')).toBe(impostazioni);
-    expect(href('Apri: Documenti da consegnare')).toBe(impostazioni);
-    expect(href('Apri: Apri le iscrizioni')).toBe(impostazioni);
+    const impostazioni = (tappa: string) => `/admin/impostazioni?sezione=anno&anno_sede=${NUOVO}&tappa=${tappa}&userId=u1`;
+    // Ogni tappa dice alla pagina di arrivo QUALE scheda aprire e a quale blocco portarsi.
+    expect(href('Apri: Quote e retta')).toBe(impostazioni('quote'));
+    expect(href('Apri: Documenti da consegnare')).toBe(impostazioni('documenti'));
+    expect(href('Apri: Apri le iscrizioni')).toBe(impostazioni('iscrizioni'));
     expect(href('Apri: Conferme delle famiglie')).toBe('/admin/students/conferme?userId=u1');
     expect(href('Apri: A che punto siamo')).toBe('/admin/students/anno-prossimo?userId=u1');
     expect(href('Apri: Passaggio d’anno')).toBe('/admin/students/passaggio?userId=u1');
@@ -226,5 +245,35 @@ describe('PreparaAnnoProssimo — stato delle tappe', () => {
     await waitFor(() => expect(screen.getAllByText(/non riesco a leggerlo/i).length).toBeGreaterThan(0));
     expect(screen.queryByText(/^fatto$/i)).toBeNull();
     expect(screen.getByRole('link', { name: 'Apri: Quote e retta' })).toBeInTheDocument();
+  });
+});
+
+describe('PreparaAnnoProssimo — il primo clic non sembra morto', () => {
+  it('mentre una tappa sta caricando la sua riga lo dice subito («Un attimo…») e segna aria-busy', async () => {
+    rispondi([]);
+    ctx.inCaricamento = '/admin/students/conferme?userId=u1';
+    render(<PreparaAnnoProssimo userId="u1" withUser={withUser} />);
+    await screen.findByRole('heading', { name: /prepara l’anno prossimo/i });
+    const riga = screen.getByRole('link', { name: 'Apri: Conferme delle famiglie' }).closest('li') as HTMLElement;
+    expect(within(riga).getByText('Un attimo…')).toBeInTheDocument();
+    expect(riga.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(riga.querySelector('[data-pending="true"]')).not.toBeNull();
+  });
+
+  it('le altre righe restano quiete: niente «Un attimo…» dove nessuno ha cliccato', async () => {
+    rispondi([]);
+    ctx.inCaricamento = '/admin/students/conferme?userId=u1';
+    render(<PreparaAnnoProssimo userId="u1" withUser={withUser} />);
+    await screen.findByRole('heading', { name: /prepara l’anno prossimo/i });
+    expect(screen.getAllByText('Un attimo…')).toHaveLength(1);
+    const quiete = screen.getByRole('link', { name: 'Apri: Quote e retta' }).closest('li') as HTMLElement;
+    expect(quiete.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+
+  it('senza clic non c\'è nessun segno di caricamento', async () => {
+    rispondi([]);
+    render(<PreparaAnnoProssimo userId="u1" withUser={withUser} />);
+    await screen.findByRole('heading', { name: /prepara l’anno prossimo/i });
+    expect(screen.queryByText('Un attimo…')).toBeNull();
   });
 });

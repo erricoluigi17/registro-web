@@ -177,5 +177,6 @@
   "wizardSedeLegenda": "Enrollment location",
   "wizardSedeSub": "Choose the location where you want to enroll your child",
   "wizardConsensiTitolo": "Consents and privacy notice",
-  "wizardConsensiSottotitolo": "One step, then the summary"
+  "wizardConsensiSottotitolo": "One step, then the summary",
+  "wizardStessoIndirizzo": "Same address as the child"
 }

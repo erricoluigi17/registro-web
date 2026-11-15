@@ -4,6 +4,8 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import itPassaggio from '../../messages/it/annoPassaggio.json'
 import itShared from '../../messages/it/shared.json'
 import itSettings from '../../messages/it/adminSettings.json'
+import itNav from '../../messages/it/etichette.json'
+import itStudenti from '../../messages/it/adminStudents.json'
 import enSettings from '../../messages/en/adminSettings.json'
 import enPassaggio from '../../messages/en/annoPassaggio.json'
 
@@ -42,6 +44,9 @@ import { PassaggioClient } from '@/app/(dashboard)/admin/students/passaggio/Pass
 const ANNO = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const PASS = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const SEDE = 'ffffffff-ffff-4fff-8fff-ffffffffff01'
+const ANNO_CORRENTE = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+const ID_ANNO_NUOVO = '99999999-9999-4999-8999-999999999999'
+const ID_ANNO_CORRENTE = '88888888-8888-4888-8888-888888888888'
 const AL1 = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
 const AL2 = 'a2a2a2a2-a2a2-4a2a-8a2a-a2a2a2a2a2a2'
 const AL3 = 'a3a3a3a3-a3a3-4a3a-8a3a-a3a3a3a3a3a3'
@@ -77,6 +82,10 @@ const s = {
   lettura: null as null | number, // uno status di errore per la GET principale
   /** (giro 3, NS1) Come in produzione: l'elenco delle sezioni è quello dell'anno NUOVO, la classe di partenza arriva coi nomi della lettura. */
   scopedSenzaVecchia: false,
+  /** (F3) I docenti copiati del passaggio e l'elenco del personale che la route `admin/staff` restituisce. */
+  docenti: [{ utente_id: 'd1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1', sezione_a_id: '52525252-5252-4525-8525-525252525252', origine: 'copiata' as const }] as Array<{ utente_id: string; sezione_a_id: string; origine: 'copiata' | 'aggiunta' | 'tolta' }>,
+  staffErr: null as null | number,
+  staff: [{ id: 'd1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1', nome: 'NomeDocente', cognome: 'CognomeDocente', ruolo: 'docente' }] as Array<{ id: string; nome: string | null; cognome: string | null; ruolo: string; scuola_id?: string | null }>,
 }
 const fetchMock = vi.fn()
 
@@ -122,7 +131,7 @@ function lettura(params: URLSearchParams): Risposta {
     passaggio: s.passaggio,
     righe: righe.slice(0, tetto),
     totale: righe.length,
-    docenti: [{ utente_id: DOC1, sezione_a_id: S_A1, origine: 'copiata' }],
+    docenti: s.docenti,
     ...(contatori ? { contatori } : {}),
     ...(s.scopedSenzaVecchia ? { classi_da: { [S_DA]: 'Sezione Partenza' } } : {}),
   })
@@ -136,7 +145,10 @@ function risposta(url: string, metodo: string, body: Record<string, unknown>): R
       ...(s.scopedSenzaVecchia ? [] : [{ id: S_DA, name: 'Sezione Partenza', school_type: 'infanzia' }]),
     ] }])
   }
-  if (url.includes('/api/admin/staff')) return { status: 200, body: { success: true, data: [{ id: DOC1, nome: 'NomeDocente', cognome: 'CognomeDocente', ruolo: 'docente' }] } }
+  if (url.includes('/api/admin/staff') && s.staffErr) return { status: s.staffErr, body: {} }
+  if (url.includes('/api/admin/staff')) return { status: 200, body: { success: true, data: s.staff } }
+  // (F3) L'anno IN CORSO non ha un passaggio suo: il passaggio sta sull'anno nuovo (ANNO). Qui la lettura dell'anno in corso è vuota.
+  if (url.includes(`/api/admin/anni/${ANNO_CORRENTE}/passaggio`) && metodo === 'GET') return ok({ passaggio: null, righe: [], totale: 0, docenti: [] })
   const base = `/api/admin/anni/${ANNO}/passaggio`
   if (url.includes(`${base}/nomi`) && metodo === 'GET') {
     const ids = (new URL(url, 'http://x').searchParams.get('ids') ?? '').split(',')
@@ -179,6 +191,9 @@ beforeEach(() => {
   s.pending = false
   s.lettura = null
   s.scopedSenzaVecchia = false
+  s.staffErr = null
+  s.docenti = [{ utente_id: DOC1, sezione_a_id: S_A1, origine: 'copiata' }]
+  s.staff = [{ id: DOC1, nome: 'NomeDocente', cognome: 'CognomeDocente', ruolo: 'docente' }]
   fetchMock.mockImplementation((url: string, init?: { method?: string; body?: string }) => {
     if (s.pending) return new Promise(() => {})
     const r = risposta(String(url), init?.method ?? 'GET', init?.body ? JSON.parse(init.body) : {})
@@ -250,7 +265,7 @@ describe('PassaggioClient · gli stati', () => {
     const contatori = screen.getByRole('group', { name: itPassaggio.contatoriEtichetta })
     await waitFor(() => expect(within(contatori).getByRole('button', { name: /Non hanno risposto\s*2/ })).toBeTruthy())
     expect(within(contatori).getByRole('button', { name: /Continuano\s*1/ })).toBeTruthy()
-    expect(within(contatori).getByRole('button', { name: /Escono\s*1/ })).toBeTruthy()
+    expect(within(contatori).getByRole('button', { name: /Escono: già deciso\s*1/ })).toBeTruthy()
   })
 
   it('un contatore filtra l’elenco: la richiesta porta l’esito e restano solo quei bambini', async () => {
@@ -319,7 +334,7 @@ describe('PassaggioClient · le scritture', () => {
     await screen.findByText('NomeUno CognomeUno')
     const riquadro = await screen.findByRole('region', { name: itPassaggio.riquadroNonRispostoTitolo })
     expect(riquadro.textContent).toMatch(/2 famiglie non hanno risposto/)
-    expect(riquadro.textContent).toMatch(/escono/)
+    expect(riquadro.textContent).toMatch(/Chi non conferma, al passaggio esce/)
     expect(riquadro.textContent).toMatch(/solo un’anteprima, non è cambiato niente/)
     expect(within(riquadro).getByRole('link', { name: itPassaggio.riquadroVaiAConferme }).getAttribute('href')).toBe('/admin/students/conferme')
     // sta SOPRA l'elenco dei bambini
@@ -330,8 +345,9 @@ describe('PassaggioClient · le scritture', () => {
   it('una riga spiega «Cambiano grado» e come si segna un bambino che va alla primaria', async () => {
     render(<PassaggioClient />)
     await screen.findByText('NomeUno CognomeUno')
-    const nota = await screen.findByText(itPassaggio.cambiaGradoNota)
-    expect(nota.textContent).toMatch(/Va alla primaria/)
+    expect(await screen.findByText(itPassaggio.cambiaGradoNota)).toBeTruthy()
+    // la spiegazione lunga sta in un «Perché?» chiuso, ma c'è
+    expect(screen.getByText(itPassaggio.cambiaGradoDettaglio).textContent).toMatch(/Va alla primaria/)
   })
 
   it('«Conferma il passaggio» apre il dialogo che conta i bambini che usciranno, dice le date e il sì fa la POST giusta', async () => {
@@ -551,8 +567,8 @@ describe('PassaggioClient · E4 · il motivo del pulsante grigio', () => {
     const motivo = pulsante.nextElementSibling as HTMLElement
     expect(motivo.textContent).toContain(itPassaggio.nonAncora.replace('{data}', scritta))
     expect(pulsante.getAttribute('aria-describedby')).toBe(motivo.id)
-    // la frase non è ripetuta in cima alla pagina: lì resta solo l'invito a guardare l'anteprima
-    expect(screen.getAllByText(new RegExp(scritta))).toHaveLength(1)
+    // la frase non è ripetuta in cima alla pagina: lì resta solo l'invito a guardare l'anteprima (la data compare anche nel riquadro di chi non ha risposto)
+    expect(screen.getAllByText(new RegExp(itPassaggio.nonAncora.replace('{data}', scritta).replace('.', '\\.')))).toHaveLength(1)
     expect(screen.getByText(itPassaggio.nonAncoraNota)).toBeTruthy()
   })
 
@@ -582,7 +598,7 @@ describe('PassaggioClient · E4 · chi continua tiene lo stesso nome di classe',
     await screen.findByText('NomeUno CognomeUno')
     const frase = screen.getByText(new RegExp(itPassaggio.continuaNota.slice(0, 30)))
     expect(frase.textContent).toMatch(/stesso nome/)
-    expect(frase.textContent).toMatch(/rinomin/i)
+    expect(frase.textContent).toMatch(/Rinomina/)
     const link = within(frase).getByRole('link', { name: itPassaggio.continuaNotaLink })
     expect(link.getAttribute('href')).toBe('/admin/students?tab=sections')
   })
@@ -598,5 +614,193 @@ describe('PassaggioClient · E4 · chi continua tiene lo stesso nome di classe',
     const c = m as unknown as Record<string, string>
     expect(c.continuaNota).toMatch(/\S/)
     expect(c.continuaNotaLink).toMatch(/\S/)
+  })
+})
+
+// =============================================================================
+// TERZO LOTTO · F3 · il diario della segretaria inesperta (15/11): tornare all'anno in corso, «Escono 1» contro «21 non hanno risposto»,
+// «Docente senza nome», la «scheda Sezioni» che non si trova, la spiegazione lunga di «Cambiano grado».
+// =============================================================================
+
+const scegli = vi.fn()
+/** Si sta guardando l'anno IN CORSO (attivo); l'anno nuovo (ANNO, 2027/28) esiste ed è quello su cui si prepara il passaggio. */
+const annoInCorso = () => {
+  h.anno = {
+    effettivo: { annoId: ID_ANNO_CORRENTE, annoSedeId: ANNO_CORRENTE, annoInizio: 2026, etichetta: '2026/27', attivo: true, stato: 'corrente' },
+    anni: [
+      { annoId: ID_ANNO_NUOVO, annoSedeId: ANNO, annoInizio: 2027, etichetta: '2027/28', attivo: false, stato: 'iscrizioni_aperte' },
+      { annoId: ID_ANNO_CORRENTE, annoSedeId: ANNO_CORRENTE, annoInizio: 2026, etichetta: '2026/27', attivo: true, stato: 'corrente' },
+    ],
+    scegli,
+  }
+}
+
+describe('PassaggioClient · F3-1 · tornando all’anno in corso non sembra di aver perso il lavoro', () => {
+  it('con un’anteprima già calcolata sull’anno nuovo lo dice, e il pulsante sceglie quell’anno', async () => {
+    annoInCorso()
+    render(<PassaggioClient />)
+    expect(await screen.findByText(itPassaggio.prossimoNota.replace('{periodo}', '2027/28'))).toBeTruthy()
+    expect(await screen.findByText(itPassaggio.prossimoAnteprimaC.replace('{periodo}', '2027/28'))).toBeTruthy()
+    expect(screen.queryByText(itPassaggio.rimandoSelettore)).toBeNull()
+    expect(screen.queryByText(/selettore in alto/)).toBeNull()
+    expect(screen.queryByRole('button', { name: itPassaggio.azioneCalcola })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: itPassaggio.prossimoApri.replace('{periodo}', '2027/28') }))
+    expect(scegli).toHaveBeenCalledWith(ID_ANNO_NUOVO)
+  })
+
+  it('senza anteprima sull’anno nuovo dice che non è ancora calcolata, e il pulsante sceglie comunque l’anno nuovo', async () => {
+    annoInCorso()
+    s.passaggio = null
+    s.righe = []
+    render(<PassaggioClient />)
+    expect(await screen.findByText(itPassaggio.prossimoAnteprimaNo.replace('{periodo}', '2027/28'))).toBeTruthy()
+    expect(screen.queryByText(itPassaggio.prossimoAnteprimaC.replace('{periodo}', '2027/28'))).toBeNull()
+    expect(screen.queryByText(/selettore in alto/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: itPassaggio.prossimoApri.replace('{periodo}', '2027/28') }))
+    expect(scegli).toHaveBeenCalledWith(ID_ANNO_NUOVO)
+  })
+
+  it('la lettura dell’anteprima è quella dell’anno nuovo, non dell’anno in corso', async () => {
+    annoInCorso()
+    render(<PassaggioClient />)
+    await screen.findByText(itPassaggio.prossimoAnteprimaC.replace('{periodo}', '2027/28'))
+    expect(chiamate('GET', `/api/admin/anni/${ANNO}/passaggio`).length).toBeGreaterThan(0)
+  })
+})
+
+describe('PassaggioClient · F3-2 · «Escono» e «Non hanno risposto» non si contraddicono', () => {
+  it('le due etichette dicono chi esce per scelta e chi non ha risposto', async () => {
+    render(<PassaggioClient />)
+    await screen.findByText('NomeUno CognomeUno')
+    const contatori = screen.getByRole('group', { name: itPassaggio.contatoriEtichetta })
+    expect(await within(contatori).findByRole('button', { name: /Escono: già deciso\s*1/ })).toBeTruthy()
+    expect(within(contatori).getByRole('button', { name: /Non hanno risposto\s*2/ })).toBeTruthy()
+  })
+
+  it('l’avviso dice cosa si può fare e fino a quando, con la data VERA del passaggio (dal programma)', async () => {
+    vi.setSystemTime(new Date('2027-06-15T10:00:00Z'))
+    s.passaggio = { id: PASS, stato: 'anteprima', conteggi: {}, apribile_dal: '2027-08-01', inizio_anno_nuovo: '2027-09-15' }
+    render(<PassaggioClient />)
+    const riquadro = await screen.findByRole('region', { name: itPassaggio.riquadroNonRispostoTitolo })
+    expect(riquadro.textContent).toContain('Puoi ancora registrare la loro conferma fino al passaggio (dal 1 agosto 2027). Chi non conferma, al passaggio esce.')
+  })
+
+  it('con un’altra data del programma l’avviso cita quella (nessuna data scritta nel codice)', async () => {
+    vi.setSystemTime(new Date('2027-06-15T10:00:00Z'))
+    s.passaggio = { id: PASS, stato: 'anteprima', conteggi: {}, apribile_dal: '2027-07-20', inizio_anno_nuovo: '2027-09-15' }
+    render(<PassaggioClient />)
+    const riquadro = await screen.findByRole('region', { name: itPassaggio.riquadroNonRispostoTitolo })
+    expect(riquadro.textContent).toContain('(dal 20 luglio 2027)')
+    expect(riquadro.textContent).not.toContain('1 agosto')
+  })
+
+  it('passata la data non si cita un «dal» ormai vecchio: resta «fino al passaggio»', async () => {
+    render(<PassaggioClient />)
+    const riquadro = await screen.findByRole('region', { name: itPassaggio.riquadroNonRispostoTitolo })
+    expect(riquadro.textContent).toContain('fino al passaggio. Chi non conferma, al passaggio esce.')
+    expect(riquadro.textContent).not.toMatch(/\(dal /)
+  })
+})
+
+describe('PassaggioClient · F3-3 · i docenti delle classi nuove hanno un nome che serve', () => {
+  const sezioneDocenti = async () => (await screen.findByRole('region', { name: itPassaggio.docentiTitolo })) as HTMLElement
+
+  it('un docente di un’ALTRA sede del selettore ha comunque il suo nome (prima: «Docente senza nome»)', async () => {
+    s.staff = [{ id: DOC1, nome: 'NomeDocente', cognome: 'CognomeDocente', ruolo: 'docente', scuola_id: 'ffffffff-ffff-4fff-8fff-ffffffffff99' }]
+    render(<PassaggioClient />)
+    const sez = await sezioneDocenti()
+    expect(await within(sez).findByText('NomeDocente CognomeDocente')).toBeTruthy()
+    expect(within(sez).queryByText(itPassaggio.docenteSenzaNome)).toBeNull()
+  })
+
+  it('un docente che nell’anagrafica non ha il nome dice di completarlo, invece di un generico «senza nome»', async () => {
+    s.staff = [{ id: DOC1, nome: null, cognome: '', ruolo: 'docente' }]
+    render(<PassaggioClient />)
+    const sez = await sezioneDocenti()
+    // nella riga del docente (la stessa frase compare anche come voce della tendina «aggiungi»)
+    await waitFor(() => expect(within(within(sez).getAllByRole('listitem')[0]).getByText(itPassaggio.docenteSenzaNome)).toBeTruthy())
+    expect(itPassaggio.docenteSenzaNome).toMatch(/anagrafica del personale/)
+  })
+
+  it('un docente che non è nell’elenco del personale lo dice (non «senza nome»)', async () => {
+    s.staff = []
+    render(<PassaggioClient />)
+    const sez = await sezioneDocenti()
+    expect(await within(sez).findByText(itPassaggio.docenteNonInElenco)).toBeTruthy()
+    expect(within(sez).queryByText(itPassaggio.docenteSenzaNome)).toBeNull()
+  })
+
+  it('nella tendina «aggiungi» restano solo i colleghi della sede dell’anno', async () => {
+    s.staff = [
+      { id: DOC1, nome: 'NomeDocente', cognome: 'CognomeDocente', ruolo: 'docente', scuola_id: 'ffffffff-ffff-4fff-8fff-ffffffffff99' },
+      { id: 'd2d2d2d2-d2d2-4d2d-8d2d-d2d2d2d2d2d2', nome: 'NomeDue', cognome: 'Collega', ruolo: 'docente', scuola_id: SEDE },
+    ]
+    render(<PassaggioClient />)
+    const sez = await sezioneDocenti()
+    await within(sez).findByText('NomeDocente CognomeDocente')
+    const tendina = within(sez).getByLabelText(itPassaggio.docenteScegli) as HTMLSelectElement
+    const opzioni = Array.from(tendina.options).map((o) => o.textContent)
+    expect(opzioni).toContain('NomeDue Collega')
+    expect(opzioni).not.toContain('NomeDocente CognomeDocente')
+  })
+})
+
+describe('PassaggioClient · F3-3b · se la lettura del personale fallisce', () => {
+  it('niente «non presente nell’elenco»: una riga lo dice, c’è «Riprova», e dopo il successo compaiono i nomi', async () => {
+    s.staffErr = 500
+    render(<PassaggioClient />)
+    const sez = (await screen.findByRole('region', { name: itPassaggio.docentiTitolo })) as HTMLElement
+    expect(await within(sez).findByText(itPassaggio.personaleErrore)).toBeTruthy()
+    expect(within(sez).queryByText(itPassaggio.docenteNonInElenco)).toBeNull()
+    s.staffErr = null
+    fireEvent.click(within(sez).getByRole('button', { name: itPassaggio.riprova }))
+    await waitFor(() => expect(within(within(sez).getAllByRole('listitem')[0]).getByText('NomeDocente CognomeDocente')).toBeTruthy())
+    expect(within(sez).queryByText(itPassaggio.personaleErrore)).toBeNull()
+  })
+
+  it('il testo «non presente» non dice più «di questa sede»', () => {
+    expect(itPassaggio.docenteNonInElenco).not.toMatch(/sede/)
+    expect(enPassaggio.docenteNonInElenco).not.toMatch(/location|campus/)
+    expect(itPassaggio.personaleErrore).toMatch(/\S/)
+    expect(enPassaggio.personaleErrore).toMatch(/\S/)
+  })
+})
+
+describe('PassaggioClient · F3-4 · dove si rinomina davvero una classe', () => {
+  it('la frase dice il percorso con le parole che si vedono a schermo e il link porta alla scheda', async () => {
+    render(<PassaggioClient />)
+    await screen.findByText('NomeUno CognomeUno')
+    const frase = screen.getByText(new RegExp(itPassaggio.continuaNota.slice(0, 30)))
+    expect(frase.textContent).toContain('menu «Anagrafica»')
+    expect(frase.textContent).toContain('scheda «Sezioni»')
+    expect(frase.textContent).toContain('premi «Rinomina»')
+    const link = within(frase).getByRole('link', { name: itPassaggio.continuaNotaLink })
+    expect(link.getAttribute('href')).toBe('/admin/students?tab=sections')
+  })
+
+  it('i nomi del percorso sono quelli veri del programma (menu, scheda e pulsante)', () => {
+    expect(itPassaggio.continuaNota).toContain(`«${itNav.nav_students}»`)
+    expect(itPassaggio.continuaNota).toContain(`«${itStudenti.tabSezioni}»`)
+    expect(itPassaggio.continuaNota).toContain(`«${itStudenti.sezRinomina}»`)
+  })
+})
+
+describe('PassaggioClient · F3-5 · «Cambiano grado» in una frase', () => {
+  it('la nota è una frase sola; il resto sta in un «Perché?» chiuso', async () => {
+    render(<PassaggioClient />)
+    await screen.findByText('NomeUno CognomeUno')
+    const nota = await screen.findByText(itPassaggio.cambiaGradoNota)
+    expect(nota.textContent?.length ?? 999).toBeLessThan(100)
+    const dettaglio = screen.getByText(itPassaggio.cambiaGradoPerche).closest('details') as HTMLDetailsElement
+    expect(dettaglio).toBeTruthy()
+    expect(dettaglio.open).toBe(false)
+    expect(within(dettaglio).getByText(itPassaggio.cambiaGradoDettaglio)).toBeTruthy()
+  })
+
+  it.each([['it', itPassaggio], ['en', enPassaggio]])('(%s) le chiavi nuove esistono in tutte e due le lingue', (_l, m) => {
+    const c = m as unknown as Record<string, string>
+    for (const k of ['cambiaGradoPerche', 'cambiaGradoDettaglio', 'docenteNonInElenco', 'prossimoNota', 'prossimoAnteprimaC', 'prossimoAnteprimaNo', 'prossimoConfermato', 'prossimoApri', 'riquadroNonRispostoSenzaData']) {
+      expect(c[k], k).toMatch(/\S/)
+    }
   })
 })
