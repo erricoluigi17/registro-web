@@ -1122,6 +1122,27 @@ describe('ConfermeClient — terzo lotto, F2', () => {
       await waitFor(() => expect(document.activeElement).toBe(rigaDi('NomeProva CognomeProva')))
     })
 
+    it('l\'àncora si consuma: dopo l\'operazione la compensazione avviene, un render in più (scrivere nella ricerca) non sposta più né pagina né fuoco', async () => {
+      s.confermato = false
+      s.altri = NOMI
+      render(<ConfermeClient />)
+      await screen.findByText('NomeProva CognomeProva')
+      fireEvent.click(within(rigaDi('NomeProva CognomeProva')).getByRole('button', { name: itConferme.azioneConferma }))
+      await screen.findByRole('status', { name: itConferme.esitoRegione })
+      await waitFor(() => expect(scrollBy).toHaveBeenCalledWith({ top: 60 }))
+      // la rilettura arriva (la riga è ora «confermata»: niente più pulsante Conferma)
+      await waitFor(() => expect(within(rigaDi('NomeProva CognomeProva')).queryByRole('button', { name: itConferme.azioneConferma })).toBeNull())
+      await new Promise((r) => setTimeout(r, 50))
+      const prima = scrollBy.mock.calls.length
+      expect(prima).toBeGreaterThan(0)
+      // la segretaria porta il fuoco altrove (body) e scrive nella ricerca: la pagina resta com'è
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      fireEvent.change(screen.getByRole('searchbox', { name: itConferme.cercaEtichetta }), { target: { value: 'e' } })
+      fireEvent.change(screen.getByRole('searchbox', { name: itConferme.cercaEtichetta }), { target: { value: 'el' } })
+      expect(scrollBy.mock.calls.length).toBe(prima)
+      expect(document.activeElement === document.body).toBe(true)
+    })
+
     it('con un filtro che fa uscire la riga dopo «Conferma»: il fuoco passa alla riga che le sta sotto, nello stesso punto', async () => {
       s.confermato = false
       s.altri = NOMI

@@ -105,6 +105,36 @@ describe('AnnoNotice', () => {
     expect(screen.getByRole('button', { name: 'Torna al 2026/27' })).toBeInTheDocument()
   })
 
+  it('un anno a DUE anni dall\'attivo non è «l\'anno prossimo»: frase neutra, e il pulsante torna al 2026/27', () => {
+    const A28 = '22222222-2222-4222-8222-222222222028'
+    h.perSede = {
+      [SEDE_A]: [riga(2026, 'corrente', A26), riga(2027, 'iscrizioni_aperte', A27), riga(2028, 'in_preparazione', A28)],
+    }
+    render(
+      <AnnoProvider>
+        <AnnoNotice />
+        <Scegli annoId={A28} />
+      </AnnoProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'vai a 2028' }))
+    const avviso = screen.getByRole('status')
+    expect(avviso).toHaveTextContent('Stai guardando il 2028/29. L’anno in corso non cambia.')
+    expect(avviso).not.toHaveTextContent(/anno prossimo|anno passato/)
+    expect(screen.getByRole('button', { name: 'Torna al 2026/27' })).toBeInTheDocument()
+  })
+
+  it('senza un anno attivo l\'avviso non sa dire «prossimo» né «passato»: frase neutra, pulsante generico', () => {
+    h.perSede = {
+      [SEDE_A]: [riga(2026, 'in_preparazione', A26), riga(2027, 'in_preparazione', A27)],
+    }
+    monta()
+    fireEvent.click(screen.getByRole('button', { name: 'vai a 2027' }))
+    const avviso = screen.getByRole('status')
+    expect(avviso).toHaveTextContent('Stai guardando il 2027/28. L’anno in corso non cambia.')
+    expect(avviso).not.toHaveTextContent(/anno prossimo|anno passato/)
+    expect(screen.getByRole('button', { name: 'Torna all’anno in corso' })).toBeInTheDocument()
+  })
+
   it('(PR 4.9) con l\'anno in corso e con un altro anno aperto la riga «si sta chiudendo» non c\'è', () => {
     monta()
     expect(screen.queryByRole('note')).toBeNull() // l'anno attivo è `corrente`
