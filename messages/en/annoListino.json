@@ -77,7 +77,7 @@
   "retteSalvata": "Tuition saved ✓",
   "retteTolta": "Tuition removed ✓ Without an “All groups” tuition, children with no tuition of their own no longer receive the charge.",
   "retteSenzaFasce": "The tuition applies to all children. If it changes by age group (for example the nursery), first choose the age group of each class in the “Classes for the year” block further down.",
-  "retteUgualeAnnoScorso": "This is the same amount as last year ({importo}): please check it before opening enrolment. Then press “Save the monthly fee” to confirm or change it.",
+  "retteUgualeAnnoScorso": "This is the same amount as last year ({importo}). If that is right, you do not need to do anything. If it has changed, correct it and press “Save the monthly fee”.",
   "retteMesiTitolo": "Months in which tuition is generated",
   "retteMesiNota": "Applies to the “All groups” row. Usually September to June. Tuition already created does not change.",
   "retteMesiVuoti": "Choose at least one month.",
