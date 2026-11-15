@@ -55,8 +55,8 @@ afterEach(() => vi.unstubAllGlobals())
 const puts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')
 const corpoPut = () => JSON.parse(String(puts()[puts().length - 1][1].body)) as Record<string, unknown>
 
-async function apriRette() {
-  render(<AnnoConfigurazione userId={USER} annoSedeId={ANNO} annoPrecedenteSedeId={PREC} stato="in_preparazione" onCambiata={() => {}} />)
+async function apriRette(stato: 'in_preparazione' | 'iscrizioni_aperte' = 'in_preparazione') {
+  render(<AnnoConfigurazione userId={USER} annoSedeId={ANNO} annoPrecedenteSedeId={PREC} stato={stato} onCambiata={() => {}} />)
   fireEvent.click(await screen.findByRole('button', { name: itAnno.schedaRette }))
   return screen.findByRole('group', { name: itAnno.retteTitolo })
 }
@@ -131,11 +131,52 @@ describe('scheda Rette', () => {
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes(PREC))).toBe(false)
   })
 
-  it('l’avviso sparisce dopo il salvataggio della retta per l’anno nuovo', async () => {
+  it('in_preparazione l’avviso dice che lasciarlo così va bene', async () => {
+    lettura = { rette: [riga(280)] }
+    precedente = [riga(280)]
+    const g = await apriRette()
+    const testo = await within(g).findByText(/È lo stesso importo dell’anno scorso/)
+    expect(testo.textContent).toBe('È lo stesso importo dell’anno scorso (€ 280,00). Se va bene così, non devi fare niente. Se è cambiato, correggilo e premi «Salva la retta».')
+    expect(testo.textContent).not.toMatch(/prima di aprire/)
+  })
+
+  it('a iscrizioni_aperte l’importo uguale NON porta l’avviso (il controllo serviva prima dell’apertura)', async () => {
+    lettura = { rette: [riga(280)] }
+    precedente = [riga(280)]
+    const g = await apriRette('iscrizioni_aperte')
+    await waitFor(() => expect(campoImporto(g).value).toBe('280'))
+    expect(within(g).queryByText(/stesso importo dell’anno scorso/)).toBeNull()
+  })
+
+  it('salvare solo i mesi NON spegne l’avviso', async () => {
     lettura = { rette: [riga(280)] }
     precedente = [riga(280)]
     const g = await apriRette()
     await within(g).findByText(/stesso importo dell’anno scorso/)
+    fireEvent.click(within(g).getByRole('checkbox', { name: /giugno/i }))
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
+    await waitFor(() => expect(puts()).toHaveLength(1))
+    await screen.findByText(itAnno.retteSalvata)
+    expect(within(g).getByText(/stesso importo dell’anno scorso/)).toBeInTheDocument()
+  })
+
+  it('«Togli» NON spegne l’avviso', async () => {
+    lettura = { rette: [riga(280)] }
+    precedente = [riga(280)]
+    const g = await apriRette()
+    await within(g).findByText(/stesso importo dell’anno scorso/)
+    fireEvent.click(within(g).getByRole('button', { name: itAnno.togli }))
+    await waitFor(() => expect(puts()).toHaveLength(1))
+    await screen.findByText(itAnno.retteTolta)
+    expect(within(g).getByText(/stesso importo dell’anno scorso/)).toBeInTheDocument()
+  })
+
+  it('salvare un importo CAMBIATO spegne l’avviso', async () => {
+    lettura = { rette: [riga(280)] }
+    precedente = [riga(280)]
+    const g = await apriRette()
+    await within(g).findByText(/stesso importo dell’anno scorso/)
+    fireEvent.change(campoImporto(g), { target: { value: '290' } })
     fireEvent.click(within(g).getByRole('button', { name: itAnno.salvaRetta }))
     await screen.findByText(itAnno.retteSalvata)
     expect(within(g).queryByText(/stesso importo dell’anno scorso/)).toBeNull()

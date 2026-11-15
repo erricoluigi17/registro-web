@@ -171,7 +171,8 @@ export function AnnoConfigurazione({
   const t = useTranslations('annoListino');
   const base = `/api/admin/anni/${annoSedeId}`;
   const [scheda, setScheda] = useState<Scheda>(schedaIniziale ?? 'quote');
-  // La retta è stata salvata da questa schermata: l'avviso «importo copiato» non serve più (vive qui, non nella scheda, che si smonta cambiando scheda).
+  // L'importo della retta è stato cambiato e salvato da questa schermata: l'avviso «stesso importo dell'anno scorso» non serve più (vive qui,
+  // non nella scheda, che si smonta cambiando scheda). «Togli» e il salvataggio dei soli mesi non lo spengono.
   const [retteConfermate, setRetteConfermate] = useState(false);
   const blocco = useRef<HTMLFieldSetElement>(null);
   const [versione, setVersione] = useState(0);
@@ -204,7 +205,6 @@ export function AnnoConfigurazione({
       const ok = riuscita(r);
       // Il database è già cambiato: si rilegge anche se il pannello è stato smontato in volo.
       if (ok) onCambiata();
-      if (ok && area === 'rette') setRetteConfermate(true);
       if (!vivo.current) return false;
       setInCorso(null);
       if (!ok) {
@@ -259,7 +259,7 @@ export function AnnoConfigurazione({
   };
 
   const soloLettura = stato === 'in_chiusura' || stato === 'chiuso';
-  const comuni = { userId, base, versione: versione + riletturaEsterna, inCorso, scrivi, esitoDi, fasciaNome, setEsito, soloLettura, stato, annoEtichetta, retteConfermate, annoPrecedenteSedeId };
+  const comuni = { userId, base, versione: versione + riletturaEsterna, inCorso, scrivi, esitoDi, fasciaNome, setEsito, soloLettura, stato, annoEtichetta, retteConfermate, confermaRette: () => setRetteConfermate(true), annoPrecedenteSedeId };
 
   // Anno in corso, in chiusura o chiuso: del listino resta la sola retta (le quote, i moduli e i posti li rifiuta il server).
   if (stato === 'corrente' || stato === 'in_chiusura' || stato === 'chiuso') {
@@ -312,6 +312,7 @@ type Comuni = {
   annoEtichetta?: string;
   /** La retta è già stata salvata da questa schermata (l'avviso «importo copiato» non serve più). */
   retteConfermate: boolean;
+  confermaRette: () => void;
   annoPrecedenteSedeId: string | null;
   setEsito: (e: EsitoUi | null) => void;
 };
@@ -537,9 +538,12 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
     // I mesi si scelgono solo per la riga «Tutte le fasce», e si mandano solo se sono cambiati: lasciati com'erano restano «come sempre».
     const perTutte = fascia === TUTTE;
     if (perTutte && mesi.length === 0) return c.setEsito({ area, tipo: 'errore', errore: { tipo: 'campo', chiave: 'mesi' } });
+    const importoCambiato = rette.find((r) => r.fascia === (perTutte ? null : fascia))?.importo !== n;
     const mandaMesi = perTutte && !stessiMesi(mesi, mesiEffettivi);
     const corpo = { voce: 'retta', fascia: perTutte ? null : fascia, importo: n, ...(mandaMesi ? { mesi: [...mesi].sort((a, b) => a - b) } : {}) };
     const ok = await c.scrivi(area, 'PUT', `${c.base}/rette`, corpo, (d) => (d?.cambiato === false ? t('nessunaModifica') : c.annoEtichetta ? t('retteSalvataAnno', { anno: c.annoEtichetta }) : t('retteSalvata')));
+    // L'avviso si spegne solo se l'IMPORTO è cambiato (non «Togli», non i soli mesi).
+    if (ok && importoCambiato) c.confermaRette();
     // Salvata: con più fasce il modulo si richiude e resta l'elenco, con la retta com'è adesso.
     if (ok && !soloTutte && rette.length > 0) {
       setAperto(false);
@@ -573,7 +577,8 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
   const scegliMese = (m: number, acceso: boolean) => setMesi((prima) => (acceso ? [...prima, m] : prima.filter((x) => x !== m)));
   // Solo mentre l'anno si prepara: sull'anno in corso o chiuso «controllalo» non ha caselle da toccare.
   // Il segnale vero è il confronto con l'anno prima della stessa sede (nessun importo scritto nel codice): lo fa `AvvisoRettaUguale`.
-  const confrontaConAnnoPrima = !c.retteConfermate && (c.stato === 'in_preparazione' || c.stato === 'iscrizioni_aperte') && c.annoPrecedenteSedeId !== null;
+  // Solo prima dell'apertura: il controllo serviva a quello.
+  const confrontaConAnnoPrima = !c.retteConfermate && c.stato === 'in_preparazione' && c.annoPrecedenteSedeId !== null;
   // Con più fasce la scelta si fa fra quelle che non hanno ancora una retta; cambiando una riga che c'è, la fascia è fissa.
   const sceltaFascia = !soloTutte && !inModifica;
 
