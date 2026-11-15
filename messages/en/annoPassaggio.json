@@ -137,10 +137,12 @@
   "riquadroNonRispostoSenzaData": "{n, plural, one {# family has not replied. You can still record their confirmation} other {# families have not replied. You can still record their confirmation}} until the changeover. Whoever does not confirm leaves at the changeover. This is only a preview, nothing has changed.",
   "cambiaGradoPerche": "Why?",
   "cambiaGradoDettaglio": "To mark a child who goes to primary school, open “Confirmations” and tick “Goes to primary school” on their row; then recalculate the preview.",
-  "docenteNonInElenco": "Teacher not in this location’s list",
+  "docenteNonInElenco": "Teacher not in the staff list",
   "prossimoNota": "The changeover is prepared on the new year ({periodo}), not on the current one.",
   "prossimoAnteprimaC": "There is already a preview for {periodo}: your work is there, it is not lost.",
   "prossimoAnteprimaNo": "No preview calculated yet for {periodo}.",
   "prossimoConfermato": "Already confirmed: the changeover to {periodo}.",
-  "prossimoApri": "Go to the changeover on {periodo}"
+  "prossimoApri": "Go to the changeover on {periodo}",
+  "personaleErrore": "I can’t read the staff names.",
+  "docenteNomeNonLetto": "Name not available"
 }

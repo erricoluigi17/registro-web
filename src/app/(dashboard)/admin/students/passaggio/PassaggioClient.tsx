@@ -186,6 +186,8 @@ function Passaggio({
   const { sedeCorrente } = useSediAttive();
 
   const [versione, setVersione] = useState(0);
+  // (F3) «Riprova» sulla lettura del personale: rilegge solo quella (il fallimento lo registra già `chiama`, senza dati personali).
+  const [versioneStaff, setVersioneStaff] = useState(0);
   const [filtro, setFiltro] = useState<Filtro>('tutti');
   const [pagina, setPagina] = useState(1);
   const [messaggio, setMessaggio] = useState<Messaggio | null>(null);
@@ -264,7 +266,7 @@ function Passaggio({
     const d = dati(r.corpo);
     return riuscita(r) && Array.isArray(d) ? { ok: true, dati: d as Staff[] } : { ok: false, stato: r.stato, corpo: r.corpo };
   }, [uid]);
-  const staffLetto = useLettura(passaggioId ? 'staff' : null, leggiStaff);
+  const staffLetto = useLettura(passaggioId ? `staff|${versioneStaff}` : null, leggiStaff);
   // (giro 1, B5) Nella tendina solo il personale della sede dell'anno, non i genitori né i colleghi delle altre sedi: la route lo rifiuta comunque.
   const staff = useMemo(
     () => (staffLetto.fase === 'ok' ? staffLetto.dati.filter((x) => x.ruolo !== 'genitore' && (!sedeCorrente || !x.scuola_id || x.scuola_id === sedeCorrente)) : []),
@@ -614,7 +616,7 @@ function Passaggio({
       )}
 
       {inAnteprima && (
-        <PannelloDocenti t={t} docenti={docenti} staff={staff} personale={personale} personalePronto={staffLetto.fase !== 'carico'} sezioni={sezioni} nomeSezione={nomeSezione} occupato={occupato} imposta={impostaDocente} />
+        <PannelloDocenti t={t} docenti={docenti} staff={staff} personale={personale} personalePronto={staffLetto.fase === 'ok'} personaleErrore={staffLetto.fase === 'errore'} riprovaPersonale={() => setVersioneStaff((v) => v + 1)} sezioni={sezioni} nomeSezione={nomeSezione} occupato={occupato} imposta={impostaDocente} />
       )}
 
       <Modal open={dialogo === 'conferma'} onClose={() => setDialogo(null)} title={t('dialogoConfermaTitolo')}>
@@ -790,7 +792,7 @@ function BloccoDaDecidere({
 }
 
 function PannelloDocenti({
-  t, docenti, staff, personale, personalePronto, sezioni, nomeSezione, occupato, imposta,
+  t, docenti, staff, personale, personalePronto, personaleErrore, riprovaPersonale, sezioni, nomeSezione, occupato, imposta,
 }: {
   t: T;
   docenti: DocenteApi[];
@@ -799,6 +801,9 @@ function PannelloDocenti({
   /** Per i NOMI: tutto il personale che la route ha dato (un docente di un'altra sede ha comunque il suo nome). */
   personale: Staff[];
   personalePronto: boolean;
+  /** La lettura del personale è fallita: i nomi non si sanno, e non si dice che i docenti «non ci sono». */
+  personaleErrore: boolean;
+  riprovaPersonale: () => void;
   sezioni: Sezione[];
   nomeSezione: (id: string | null) => string | null;
   occupato: boolean;
@@ -809,6 +814,7 @@ function PannelloDocenti({
   const [sezione, setSezione] = useState('');
   const nomeStaff = (uid: string): string => {
     // Tre casi, tre frasi: elenco ancora in arrivo («…»), docente non nell'elenco, docente nell'elenco ma senza nome (da completare in anagrafica).
+    if (personaleErrore) return t('docenteNomeNonLetto');
     if (!personalePronto) return '…';
     const s = personale.find((x) => x.id === uid);
     if (!s) return t('docenteNonInElenco');
@@ -819,6 +825,12 @@ function PannelloDocenti({
     <section aria-labelledby={`${id}-titolo`} className="mt-6 rounded-input border border-kidville-line p-3">
       <h2 id={`${id}-titolo`} className="m-0 font-barlow text-sm font-extrabold uppercase text-kidville-green">{t('docentiTitolo')}</h2>
       <p className={hint}>{t('docentiNota')}</p>
+      {personaleErrore && (
+        <div role="alert" className="mt-2 flex flex-wrap items-center gap-3 font-maven text-sm text-kidville-error">
+          <span>{t('personaleErrore')}</span>
+          <button type="button" className={secondario} onClick={riprovaPersonale}>{t('riprova')}</button>
+        </div>
+      )}
       {docenti.length === 0 ? (
         <p className={hint}>{t('docentiVuoto')}</p>
       ) : (

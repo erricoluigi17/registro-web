@@ -137,10 +137,12 @@
   "riquadroNonRispostoSenzaData": "{n, plural, one {# famiglia non ha risposto. Puoi ancora registrare la sua conferma} other {# famiglie non hanno risposto. Puoi ancora registrare la loro conferma}} fino al passaggio. Chi non conferma, al passaggio esce. È solo un’anteprima, non è cambiato niente.",
   "cambiaGradoPerche": "Perché?",
   "cambiaGradoDettaglio": "Per segnare un bambino che va alla primaria, apri «Conferme» e spunta «Va alla primaria» sulla sua riga; poi ricalcola l’anteprima.",
-  "docenteNonInElenco": "Docente non presente nell’elenco di questa sede",
+  "docenteNonInElenco": "Docente non presente nell’elenco del personale",
   "prossimoNota": "Il passaggio d’anno si prepara sull’anno nuovo ({periodo}), non su quello in corso.",
   "prossimoAnteprimaC": "Per {periodo} c’è già un’anteprima: il lavoro fatto è lì, non l’hai perso.",
   "prossimoAnteprimaNo": "Non hai ancora calcolato l’anteprima per {periodo}.",
   "prossimoConfermato": "Già confermato: il passaggio verso {periodo}.",
-  "prossimoApri": "Vai al passaggio su {periodo}"
+  "prossimoApri": "Vai al passaggio su {periodo}",
+  "personaleErrore": "Non riesco a leggere i nomi del personale.",
+  "docenteNomeNonLetto": "Nome non disponibile"
 }
