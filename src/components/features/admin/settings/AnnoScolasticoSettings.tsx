@@ -164,6 +164,7 @@ export function AnnoScolasticoSettings({ userId, scuolaId, annoSedeIdIniziale = 
   const inPreparazione = [...righe].reverse().find((r) => r.stato === 'in_preparazione' || r.stato === 'iscrizioni_aperte');
   const riga = righe.find((r) => r.annoId === scelto) ?? delRimando ?? sceltaDelSelettore ?? inPreparazione ?? attivo ?? righe[0];
   const tappa = tappaUrl && delRimando && delRimando.annoSedeId === riga.annoSedeId ? tappaUrl : null;
+  const precedente = calendario.find((r) => r.annoInizio === riga.annoInizio - 1) ?? null;
   const successivo = calendario.find((r) => r.annoInizio === riga.annoInizio + 1) ?? null;
   // Con un anno da preparare, chi guarda l'anno in corso (o un altro) è invitato a scegliere quello giusto.
   const daPreparare = inPreparazione && inPreparazione.annoSedeId !== riga.annoSedeId ? inPreparazione : null;
@@ -203,6 +204,7 @@ export function AnnoScolasticoSettings({ userId, scuolaId, annoSedeIdIniziale = 
         scuolaId={scuolaId}
         riga={riga}
         successivo={successivo}
+        precedente={precedente}
         daPreparare={daPreparare}
         tappa={tappa}
         occupato={loading}
@@ -221,6 +223,7 @@ function DettaglioAnno({
   scuolaId,
   riga,
   successivo,
+  precedente,
   daPreparare,
   tappa,
   occupato,
@@ -230,6 +233,8 @@ function DettaglioAnno({
   scuolaId: string;
   riga: RigaCalendario;
   successivo: RigaCalendario | null;
+  /** L'anno prima della stessa sede, se c'è: la retta uguale alla sua si segnala. */
+  precedente: RigaCalendario | null;
   /** L'anno che si sta preparando, quando NON è quello aperto: serve a invitare a sceglierlo. */
   daPreparare: RigaCalendario | null;
   /** La tappa della home da cui si arriva: scheda da aprire e blocco a cui scorrere. */
@@ -559,7 +564,7 @@ function DettaglioAnno({
 
           {/* ── Quote, moduli, posti e classi (anno in preparazione o con le iscrizioni aperte) ── */}
           {/* Per l'anno in corso e in chiusura resta la sola scheda Rette (la retta si imposta qui, non più in Impostazioni). */}
-          <AnnoConfigurazione userId={userId} annoSedeId={riga.annoSedeId} stato={statoVero} riletturaEsterna={riletturaConf} schedaIniziale={tappa && tappa !== 'iscrizioni' ? SCHEDA_DELLA_TAPPA[tappa] : undefined} scorriAlBlocco={tappa === 'quote' || tappa === 'documenti'} annoEtichetta={etichettaAnno(riga.annoInizio, 'breve')} onCambiata={configurazioneCambiata} />
+          <AnnoConfigurazione userId={userId} annoSedeId={riga.annoSedeId} stato={statoVero} riletturaEsterna={riletturaConf} annoPrecedenteSedeId={precedente?.annoSedeId ?? null} schedaIniziale={tappa && tappa !== 'iscrizioni' ? SCHEDA_DELLA_TAPPA[tappa] : undefined} scorriAlBlocco={tappa === 'quote' || tappa === 'documenti'} annoEtichetta={etichettaAnno(riga.annoInizio, 'breve')} onCambiata={configurazioneCambiata} />
 
           {/* ── Aprire le iscrizioni (solo un anno in preparazione) ────────────────────── */}
           {inPreparazione && (

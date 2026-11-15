@@ -77,7 +77,7 @@
   "retteSalvata": "Retta salvata ✓",
   "retteTolta": "Retta tolta ✓ Senza una retta per “Tutte le fasce” i bambini senza retta propria non ricevono più la voce.",
   "retteSenzaFasce": "La retta vale per tutti i bambini. Se cambia per gruppo d’età (per esempio il nido), scegli prima la fascia di ogni classe nel blocco «Classi dell’anno», più in basso.",
-  "retteCopiata": "Attenzione: questo importo è quello dell’anno scorso, copiato in automatico. Controllalo e premi «Salva la retta»: finché non lo salvi per l’anno nuovo, nessuno ha deciso questa cifra.",
+  "retteUgualeAnnoScorso": "È lo stesso importo dell’anno scorso ({importo}): controllalo prima di aprire le iscrizioni. Poi premi «Salva la retta» per confermarlo o cambiarlo.",
   "retteMesiTitolo": "Mesi in cui si genera la retta",
   "retteMesiNota": "Vale per la riga “Tutte le fasce”. Di solito da settembre a giugno. Le rette già create non cambiano.",
   "retteMesiVuoti": "Scegli almeno un mese.",

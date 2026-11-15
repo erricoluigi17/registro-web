@@ -148,11 +148,14 @@ export function AnnoConfigurazione({
   riletturaEsterna = 0,
   schedaIniziale,
   scorriAlBlocco = false,
+  annoPrecedenteSedeId = null,
 }: {
   userId: string;
   annoSedeId: string;
   /** La scheda con cui si apre il blocco (una tappa della home: «Documenti da consegnare» apre «Documenti»). Senza: «Quote». */
   schedaIniziale?: Scheda;
+  /** `anni_sede.id` dell'anno prima della stessa sede, se c'è: serve a dire che la retta è identica a quella dell'anno scorso. */
+  annoPrecedenteSedeId?: string | null;
   /** Una tappa della home ha portato qui: all'apertura la pagina scorre fino a questo blocco (la pagina si apre in cima, con le date). */
   scorriAlBlocco?: boolean;
   /** Sale quando chi sta sopra ha cambiato qualcosa senza passare da qui (l'apertura delle iscrizioni copia le classi): gli elenchi si rileggono. */
@@ -256,7 +259,7 @@ export function AnnoConfigurazione({
   };
 
   const soloLettura = stato === 'in_chiusura' || stato === 'chiuso';
-  const comuni = { userId, base, versione: versione + riletturaEsterna, inCorso, scrivi, esitoDi, fasciaNome, setEsito, soloLettura, stato, annoEtichetta, retteConfermate };
+  const comuni = { userId, base, versione: versione + riletturaEsterna, inCorso, scrivi, esitoDi, fasciaNome, setEsito, soloLettura, stato, annoEtichetta, retteConfermate, annoPrecedenteSedeId };
 
   // Anno in corso, in chiusura o chiuso: del listino resta la sola retta (le quote, i moduli e i posti li rifiuta il server).
   if (stato === 'corrente' || stato === 'in_chiusura' || stato === 'chiuso') {
@@ -309,6 +312,7 @@ type Comuni = {
   annoEtichetta?: string;
   /** La retta è già stata salvata da questa schermata (l'avviso «importo copiato» non serve più). */
   retteConfermate: boolean;
+  annoPrecedenteSedeId: string | null;
   setEsito: (e: EsitoUi | null) => void;
 };
 
@@ -455,6 +459,30 @@ function SchedaRette(c: Comuni) {
   return <BloccoRetta c={c} dati={lettura.dati} />;
 }
 
+/**
+ * AVVISO «È lo stesso importo dell'anno scorso». «Se non leggo bene, lo lascio com'è» (prova del 15/11/2026): una retta identica a
+ * quella dell'anno prima (stessa voce, stessa fascia, stesso importo) è quasi sempre copiata e mai riguardata. Si legge il listino
+ * dell'anno prima con la stessa route; se manca o la lettura fallisce (`chiama` la registra) non si mostra niente. Mai un blocco.
+ */
+function AvvisoRettaUguale({ c, precedente, rette }: { c: Comuni; precedente: string; rette: RigaRetta[] }) {
+  const t = useTranslations('annoListino');
+  const prima = useLettura(`/api/admin/anni/${precedente}/rette`, c.userId, 0, estraiRette);
+  if (prima.fase !== 'ok') return null;
+  const uguale = rette.find(
+    (r) => r.importo !== null && prima.dati.rette.some((p) => p.voce === r.voce && p.fascia === r.fascia && p.importo === r.importo),
+  );
+  if (!uguale || uguale.importo === null) return null;
+  return (
+    <p
+      role="note"
+      data-avviso="retta-copiata"
+      className="mt-3 rounded-input border-2 border-kidville-warn bg-kidville-warn-soft px-3 py-2 font-maven text-sm font-semibold text-kidville-warn-strong"
+    >
+      {t('retteUgualeAnnoScorso', { importo: formatEuro(uguale.importo) })}
+    </p>
+  );
+}
+
 function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
   const t = useTranslations('annoListino');
   const lingua = useLocale();
@@ -543,10 +571,9 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
     setImporto(importoDi(f === TUTTE ? null : f));
   };
   const scegliMese = (m: number, acceso: boolean) => setMesi((prima) => (acceso ? [...prima, m] : prima.filter((x) => x !== m)));
-  // Un 150,00 è quasi sempre l'importo copiato dal listino precedente: un AVVISO ben visibile (mai un blocco), finché la retta non viene
-  // salvata da qui per l'anno nuovo. «Se non leggo bene, lo lascio com'è»: una nota grigia piccola non basta (prova del 15/11/2026).
   // Solo mentre l'anno si prepara: sull'anno in corso o chiuso «controllalo» non ha caselle da toccare.
-  const copiata = !c.retteConfermate && (c.stato === 'in_preparazione' || c.stato === 'iscrizioni_aperte') && rette.some((r) => r.importo === 150);
+  // Il segnale vero è il confronto con l'anno prima della stessa sede (nessun importo scritto nel codice): lo fa `AvvisoRettaUguale`.
+  const confrontaConAnnoPrima = !c.retteConfermate && (c.stato === 'in_preparazione' || c.stato === 'iscrizioni_aperte') && c.annoPrecedenteSedeId !== null;
   // Con più fasce la scelta si fa fra quelle che non hanno ancora una retta; cambiando una riga che c'è, la fascia è fissa.
   const sceltaFascia = !soloTutte && !inModifica;
 
@@ -555,15 +582,7 @@ function BloccoRetta({ c, dati }: { c: Comuni; dati: LetturaRette }) {
       <legend className={sottoTitolo}>{c.annoEtichetta && (c.stato === 'in_preparazione' || c.stato === 'iscrizioni_aperte') ? t('retteAnnoTitolo', { anno: c.annoEtichetta }) : t('retteTitolo')}</legend>
       <p className={hint}>{t('retteNota')}</p>
       <p className={hint}>{soloTutte ? t('retteSenzaFasce') : t('fasciaSpiega')}</p>
-      {copiata && (
-        <p
-          role="note"
-          data-avviso="retta-copiata"
-          className="mt-3 rounded-input border-2 border-kidville-warn bg-kidville-warn-soft px-3 py-2 font-maven text-sm font-semibold text-kidville-warn-strong"
-        >
-          {t('retteCopiata')}
-        </p>
-      )}
+      {confrontaConAnnoPrima && c.annoPrecedenteSedeId && <AvvisoRettaUguale c={c} precedente={c.annoPrecedenteSedeId} rette={rette} />}
       {rette.length === 0 ? (
         <>
           <p className="mt-2 font-maven text-sm text-kidville-sub">{t('retteNessuna')}</p>

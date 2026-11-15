@@ -485,7 +485,9 @@ describe('Impostazioni → Anno scolastico: aprire le iscrizioni', () => {
     fireEvent.click(screen.getByRole('button', { name: itAnno.schedaRette }))
     expect(await screen.findByRole('group', { name: 'Retta mensile · anno 2027/28' })).toBeInTheDocument()
     await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u) === `/api/admin/anni/${S27}/rette`)).toBe(true))
-    expect(fetchMock.mock.calls.some(([u]) => String(u).includes(`/anni/${S26}/`))).toBe(false)
+    // L'anno prima si LEGGE (solo il listino delle rette, per dire «stesso importo dell'anno scorso»), ma non si scrive né si legge altro.
+    const suiS26 = fetchMock.mock.calls.filter(([u]) => String(u).includes(`/anni/${S26}`))
+    expect(suiS26.every(([u, init]) => String(u) === `/api/admin/anni/${S26}/rette` && (init?.method ?? 'GET') === 'GET')).toBe(true)
   })
 
   it('B1 · un anno in corso ha la scheda Rette con il titolo dell’anno, e NON le quote, i moduli e i posti', async () => {
