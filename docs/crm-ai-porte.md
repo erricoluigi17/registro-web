@@ -6,7 +6,7 @@ Negli esempi `BASE_URL` è l’origine HTTPS autorizzata e `CRM_AI_TOKEN` contie
 
 ## Stato: la migrazione non è applicata
 
-La migrazione `supabase/migrations/20261115183417_crm_porte_vendita.sql` aggiunge le colonne della vendita sulla scheda e sulla visita e le funzioni SQL delle porte nuove. Non è applicata: fino al merge e alla sua applicazione le porte nuove rispondono `503 CRM_NON_INSTALLATO`. Le porte nuove sono `sposta`, `aggiorna`, `conferma`, gli appuntamenti del giorno e `non-venute`. La porta `contatti/stato` cambia forma (vedi la sezione 5) e legge le colonne nuove, quindi risponde anch’essa `503` finché la migrazione manca. Le altre porte (`slot`, `prenota`, annulla, `contatti`, `contatti/nuovi`, `richiami`) funzionano come prima. Applicarla lo decide Luigi.
+La migrazione `supabase/migrations/20261115183417_crm_porte_vendita.sql` aggiunge le colonne della vendita sulla scheda e sulla visita e le funzioni SQL delle porte nuove. Non è applicata: fino al merge e alla sua applicazione le porte nuove rispondono `503 CRM_NON_INSTALLATO`. Le porte nuove sono `sposta`, `aggiorna`, `conferma`, gli appuntamenti del giorno e `non-venute`. La porta `contatti/stato` cambia forma (vedi la sezione 5) e legge le colonne nuove, quindi risponde anch’essa `503` finché la migrazione manca. Le porte `slot`, `prenota`, annulla e `richiami` funzionano come prima. `contatti` e `contatti/nuovi` funzionano come prima solo quando non devono leggere visite o schede già presenti (elenco vuoto, scheda appena creata); altrimenti leggono colonne della migrazione e rispondono `503 CRM_NON_INSTALLATO`. Applicarla lo decide Luigi.
 
 L’interruttore resta spento: senza `CRM_AI_ATTIVO=1` ogni porta risponde `404 CRM_AI_SPENTO` e non tocca il database.
 
