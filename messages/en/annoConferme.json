@@ -130,5 +130,13 @@
   "incassaNonLetta": "The items to collect could not be read: the list is correct, but “Collect payment” is off for now. Refresh the list in a moment.",
   "incassaVoceMancante": "The fee item was not found: collect it from Accounting.",
   "confermaSpiega": "“Confirm” means the child stays at the school next year. Their new class is chosen later, in the Year changeover.",
-  "confermaSpiegaPrimaria": "“Confirm” enrols the child in primary school, in the class chosen above."
+  "confermaSpiegaPrimaria": "“Confirm” enrols the child in primary school, in the class chosen above.",
+  "cercaEtichetta": "Search for a child",
+  "cercaSegnaposto": "First or last name",
+  "cercaNessuno": "No child with this name on this page of the list.",
+  "cercaSoloPagina": "The search only looks at this page of the list.",
+  "staiVedendo": "You are seeing: {filtro} ({n, plural, one {# child} other {# children}} of {di})",
+  "staiVedendoSenzaTotale": "You are seeing: {filtro} ({n})",
+  "mostraTutti": "Show everyone",
+  "moduliTitolo": "Documents for {nome}"
 }
