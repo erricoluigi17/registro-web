@@ -390,7 +390,9 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
     const attivo = document.activeElement;
     if (!attivo || attivo === document.body || !document.body.contains(attivo)) el.focus({ preventScroll: true });
     a.usi += 1;
-    if (a.usi >= 2) {
+    // Un'operazione fallita non rilegge niente: l'esito è l'unica applicazione, poi l'àncora si consuma (una lettura di dopo, per un
+    // cambio di filtro, non deve riportare la pagina su una posizione ormai vecchia).
+    if (a.usi >= 2 || esito?.tipo === 'errore') {
       if (a.timer) clearTimeout(a.timer);
       ancora.current = null;
     }

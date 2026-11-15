@@ -62,6 +62,7 @@ const s = {
   spunteConferma: [] as string[], // moduli spuntati sulla frequenza N1 (conferma) — il secondo cambia lo stato
   confermato: true,
   rifiutaModulo: false,
+  confermaRifiutata: false, // il POST di conferma risponde 422
   elencoVuotoDopoSpunta: false,
   letturaElencoCade: false, // la rilettura dell'elenco risponde 503 (la rete cade dopo un incasso)
   spuntato: false,
@@ -138,6 +139,7 @@ function risposta(url: string, metodo: string, body: Record<string, unknown>): R
     s.quota = s.quotaPost === 'creata' ? 'da_pagare' : 'assente'
     return ok({ frequenza_id: F_NUOVA, quota: s.quotaPost, pagamento_id: null })
   }
+  if (url.includes(`/api/admin/anni/${ANNO}/conferme`) && metodo === 'POST' && s.confermaRifiutata) return { status: 422, body: { error: 'Non si può.' } }
   if (url.includes(`/api/admin/anni/${ANNO}/conferme`) && metodo === 'POST') {
     s.confermata = true
     s.quota = s.quotaPost === 'creata' ? 'da_pagare' : 'assente'
@@ -196,6 +198,7 @@ beforeEach(() => {
   q.query = ''
   s.quotaRitiro = 'tolta'
   s.rifiutaModulo = false
+  s.confermaRifiutata = false
   s.elencoVuotoDopoSpunta = false
   s.letturaElencoCade = false
   s.nonRinnovaMotivo = undefined
@@ -1097,12 +1100,14 @@ describe('ConfermeClient — terzo lotto, F2', () => {
 
   describe('dopo un clic la segretaria resta sulla riga su cui ha lavorato', () => {
     let scrollBy: ReturnType<typeof vi.spyOn>
+    let deriva = 0 // di quanto la pagina si è mossa per conto suo (altro contenuto): il layout finto lo somma
     beforeEach(() => {
+      deriva = 0
       scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {})
       // La riga sta a 200 px dall'alto; quando compare il messaggio d'esito sopra la tabella scende di 60 px (layout finto).
       vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
         const sotto = document.querySelector('[data-esito-conferme]') ? 60 : 0
-        const top = this.hasAttribute('data-riga-id') ? 200 + sotto : 0
+        const top = this.hasAttribute('data-riga-id') ? 200 + sotto + deriva : 0
         return { top, bottom: top + 40, left: 0, right: 0, width: 0, height: 40, x: 0, y: top, toJSON: () => ({}) } as DOMRect
       })
     })
@@ -1141,6 +1146,24 @@ describe('ConfermeClient — terzo lotto, F2', () => {
       fireEvent.change(screen.getByRole('searchbox', { name: itConferme.cercaEtichetta }), { target: { value: 'el' } })
       expect(scrollBy.mock.calls.length).toBe(prima)
       expect(document.activeElement === document.body).toBe(true)
+    })
+
+    it('se l\'operazione FALLISCE l\'àncora si consuma subito: un cambio di filtro dopo non sposta la pagina con una posizione vecchia', async () => {
+      s.confermato = false
+      s.altri = NOMI
+      s.confermaRifiutata = true
+      render(<ConfermeClient />)
+      await screen.findByText('NomeProva CognomeProva')
+      fireEvent.click(within(rigaDi('NomeProva CognomeProva')).getByRole('button', { name: itConferme.azioneConferma }))
+      await screen.findByRole('alert', { name: itConferme.esitoRegione })
+      await waitFor(() => expect(scrollBy).toHaveBeenCalledWith({ top: 60 }))
+      const prima = scrollBy.mock.calls.length
+      deriva = 500 // la pagina intanto è cambiata: la posizione ricordata è vecchia
+      fireEvent.click(screen.getByRole('button', { name: itConferme.filtroNonRisposto }))
+      await waitFor(() => expect(chiamate('GET', '/conferme?').some(([url]) => String(url).includes('conferma=non_risposto'))).toBe(true))
+      await screen.findByText('Marco Verdi')
+      await new Promise((r) => setTimeout(r, 50))
+      expect(scrollBy.mock.calls.length).toBe(prima)
     })
 
     it('con un filtro che fa uscire la riga dopo «Conferma»: il fuoco passa alla riga che le sta sotto, nello stesso punto', async () => {
