@@ -147,8 +147,10 @@ export const POST = withRoute(
       if (registro.riga.impronta !== impronta) {
         return chiudiChiamataAi(ai, rifiutoAi('CHIAVE_RIUSATA', 422), { codice: 'CHIAVE_RIUSATA' })
       }
-      // La funzione rilegge il registro sotto blocco: senza risposta registrata decide lei.
-      if (registro.riga.risposta === null) return sposta([], 0)
+      // Una riga ancora senza risposta è una chiamata in corso: si riprova più tardi, senza toccare l'rpc.
+      if (registro.riga.risposta === null) {
+        return chiudiChiamataAi(ai, rifiutoAi('CRM_OPERAZIONE_NON_RIUSCITA', 409), { codice: 'CRM_OPERAZIONE_NON_RIUSCITA', entitaId: id })
+      }
       const { risposta, codice, entitaId } = rispostaDaEsito(registro.riga.risposta as EsitoSpostaAi, true, id)
       return chiudiChiamataAi(ai, risposta, { codice, entitaId })
     }

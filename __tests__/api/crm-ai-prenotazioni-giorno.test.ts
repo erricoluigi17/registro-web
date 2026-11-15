@@ -59,6 +59,8 @@ const giorno = (campi: Record<string, string> = {}, token?: string | null) =>
 const idsDi = async (r: Response) => ((await r.json()).prenotazioni as { id: string }[]).map((p) => p.id)
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-11-17T10:00:00.000Z'))
   accendiAi([SEDE_A, SEDE_B])
   h.errori = {}
   h.lette = []
@@ -67,7 +69,10 @@ beforeEach(() => {
   h.logEvento.mockClear()
   h.db = { crm_integrazioni: integrazioniFinte(), crm_schede: [], crm_appuntamenti: [] }
 })
-afterEach(() => vi.unstubAllEnvs())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllEnvs()
+})
 
 describe('appuntamenti del giorno', () => {
   it('dà solo le in_programma del giorno, anche quelle della segreteria, ordinate per inizio e id', async () => {
@@ -96,6 +101,20 @@ describe('appuntamenti del giorno', () => {
     h.db.crm_schede.push(scheda())
     h.db.crm_appuntamenti.push(visita({ fissato_via: 'ai', integrazione_id: '50000000-0000-4000-8000-0000000000cc' }))
     expect((await (await giorno()).json()).prenotazioni[0]).toMatchObject({ fissataVia: 'ai', modificabile: false })
+  })
+
+  it('una visita dell’AI in programma ma già finita non è modificabile (la funzione SQL la rifiuterebbe)', async () => {
+    h.db.crm_schede.push(scheda())
+    h.db.crm_appuntamenti.push(visita({ fissato_via: 'ai', integrazione_id: INTEGRAZIONE_A }))
+    vi.setSystemTime(new Date('2026-11-18T08:44:00.000Z'))
+    expect((await (await giorno()).json()).prenotazioni[0]).toMatchObject({ fissataVia: 'ai', modificabile: true })
+    vi.setSystemTime(new Date('2026-11-18T08:45:00.000Z'))
+    expect((await (await giorno()).json()).prenotazioni[0]).toMatchObject({ fissataVia: 'ai', modificabile: false })
+  })
+
+  it('con la scheda non trovata il telefono è null e nonContattare è true (nel dubbio non si scrive)', async () => {
+    h.db.crm_appuntamenti.push(visita())
+    expect((await (await giorno()).json()).prenotazioni[0]).toMatchObject({ telefono: null, nonContattare: true })
   })
 
   it('esclude annullate, svolte, non presentate, del giorno dopo e di un’altra sede', async () => {
