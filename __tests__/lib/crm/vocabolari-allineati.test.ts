@@ -13,11 +13,13 @@ import {
     MOTIVI_INDISPONIBILITA,
     MOTIVI_PERDITA,
     NOTE_COLLEGAMENTO,
+    OPERAZIONI_RICHIESTA_AI,
     ORIGINI,
     QUOTA_METODI,
     QUOTA_MOTIVI_BLOCCO,
     QUOTA_STATI,
     STATI_APPUNTAMENTO,
+    STATI_FAMIGLIA_AI,
     TIPI_AZIONE,
     TIPI_EVENTO,
     VIA,
@@ -39,11 +41,12 @@ import { senzaCommenti } from '../../architecture/soglia-fotografia'
 const CARTELLA = join(process.cwd(), 'supabase', 'migrations')
 /**
  * Le migrazioni del CRM, in ordine di nome: la prima crea le tabelle, le successive le cambiano
- * (la seconda, del 31/10/2026, aggiunge le colonne della quota e allunga il vincolo degli eventi).
- * Per ogni colonna vince la definizione dell'ULTIMO file che la dichiara.
+ * (la seconda, del 31/10/2026, aggiunge le colonne della quota e allunga il vincolo degli eventi; la terza, del
+ * 15/11/2026, aggiunge lo stato della famiglia scritto dalla vendita e ricrea il vincolo delle operazioni del registro
+ * dell'assistente). Per ogni colonna vince la definizione dell'ULTIMO file che la dichiara.
  */
 const FILE = readdirSync(CARTELLA)
-    .filter((f) => /^\d{14}_crm_(segreteria|quota_e_settimane)\.sql$/.test(f))
+    .filter((f) => /^\d{14}_crm_(segreteria|quota_e_settimane|porte_vendita)\.sql$/.test(f))
     .sort()
 const SQL_PER_FILE = FILE.map((f) => senzaCommenti(readFileSync(join(CARTELLA, f), 'utf8')))
 
@@ -51,6 +54,8 @@ const SQL_PER_FILE = FILE.map((f) => senzaCommenti(readFileSync(join(CARTELLA, f
 const MAPPA: Record<string, readonly string[]> = {
     'crm_schede.origine': ORIGINI,
     'crm_schede.creato_via': VIA,
+    'crm_schede.ai_stato': STATI_FAMIGLIA_AI,
+    'crm_ai_richieste.operazione': OPERAZIONI_RICHIESTA_AI,
     'crm_bambini.anno_ingresso': ANNI_INGRESSO,
     'crm_bambini.esito': ESITI_BAMBINO,
     'crm_bambini.motivo_perdita': MOTIVI_PERDITA,
@@ -121,9 +126,10 @@ const TROVATI = checkDelleMigrazioni(SQL_PER_FILE)
 
 describe('vocabolari del CRM · migrazione e tipi.ts dicono la stessa cosa', () => {
     it('le migrazioni ci sono e i check sono stati letti (sanity: senza, il resto sarebbe verde sul vuoto)', () => {
-        expect(FILE).toHaveLength(2)
+        expect(FILE).toHaveLength(3)
         expect(FILE[0]).toMatch(/_crm_segreteria\.sql$/)
         expect(FILE[1]).toMatch(/_crm_quota_e_settimane\.sql$/)
+        expect(FILE[2]).toMatch(/_crm_porte_vendita\.sql$/)
         expect(Object.keys(TROVATI).length).toBeGreaterThan(10)
     })
 

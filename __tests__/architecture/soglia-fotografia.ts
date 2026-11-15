@@ -451,6 +451,7 @@ export function posterioriCheContengono(
 export const MIGRAZIONI_ATTESE_AL_MERGE: Readonly<Record<string, string>> = {
   '20261113212650_crm_accesso_ai.sql': 'L’integrazione applica al merge tabelle private, vincoli e funzioni CRM; fotografie nella PR-B.',
   '20261113212652_crm_servizi_sede.sql': 'L’integrazione applica al merge la tabella privata dei servizi per sede (RLS accesa, solo service-role); fotografie nella PR-B.',
+  '20261115183417_crm_porte_vendita.sql': 'L’integrazione applica al merge le colonne della vendita e tre funzioni CRM AI; fotografie nella PR-B.',
 }
 
 /**

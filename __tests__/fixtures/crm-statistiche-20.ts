@@ -128,6 +128,11 @@ export function scheda(id: string, creata_il: string): SchedaRow {
     creata_il,
     aggiornata_il: creata_il,
     anonimizzata_il: null,
+    ai_stato: null,
+    ai_riassunto: null,
+    ai_aggiornata_il: null,
+    non_contattare: false,
+    non_contattare_il: null,
   }
 }
 
@@ -183,6 +188,8 @@ export function appuntamento(
     segnato_il: null,
     creato_il: '2025-12-01T10:00:00Z',
     aggiornato_il: '2025-12-01T10:00:00Z',
+    promemoria_conferma: null,
+    promemoria_conferma_il: null,
     ...o,
   }
 }

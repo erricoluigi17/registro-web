@@ -139,6 +139,30 @@ export const TIPI_EVENTO = [
 ] as const
 export type TipoEvento = (typeof TIPI_EVENTO)[number]
 
+/**
+ * Lo stato della famiglia secondo l'assistente della vendita (`crm_schede.ai_stato`, dal 15/11/2026). Identico, valore
+ * per valore e nello stesso ordine, a `STATI` di `motore/vendita/tipi.py`, che sta sul Mac: un valore aggiunto là e non
+ * qui il database lo rifiuta con 23514.
+ */
+export const STATI_FAMIGLIA_AI = [
+  'nuova',
+  'contattata',
+  'in_conversazione',
+  'appuntamento',
+  'confermato',
+  'venuta',
+  'non_venuta',
+  'non_risponde',
+  'non_interessata',
+  'non_contattare',
+  'a_una_persona',
+] as const
+export type StatoFamigliaAi = (typeof STATI_FAMIGLIA_AI)[number]
+
+/** Le operazioni del registro delle richieste dell'assistente (`crm_ai_richieste.operazione`). */
+export const OPERAZIONI_RICHIESTA_AI = ['prenota', 'sposta', 'aggiorna_scheda', 'conferma'] as const
+export type OperazioneRichiestaAi = (typeof OPERAZIONI_RICHIESTA_AI)[number]
+
 /** Durata di una visita se non se ne sceglie un'altra (anche `crm_appuntamenti.durata_min` e `crm_fasce.durata_slot_min`). */
 export const DURATA_SLOT_DEFAULT_MIN = 45
 
@@ -167,6 +191,14 @@ export interface SchedaRow {
   creata_il: string
   aggiornata_il: string
   anonimizzata_il: string | null
+  /** Dal 15/11/2026, le colonne della vendita: le scrive l'assistente con `crm_ai_aggiorna_scheda`. */
+  ai_stato: StatoFamigliaAi | null
+  /** Testo di famiglie: non esce dalle rotte `/api/crm/ai`, non entra nei log né nello storico. */
+  ai_riassunto: string | null
+  ai_aggiornata_il: string | null
+  /** La famiglia ha chiesto di non essere contattata. L'assistente lo accende soltanto; lo spegne una persona. */
+  non_contattare: boolean
+  non_contattare_il: string | null
 }
 
 export interface BambinoRow {
@@ -267,6 +299,9 @@ export interface AppuntamentoRow {
   segnato_il: string | null
   creato_il: string
   aggiornato_il: string
+  /** Dal 15/11/2026: la risposta della famiglia al promemoria (`crm_ai_conferma`). Nullo se non ha risposto. */
+  promemoria_conferma: boolean | null
+  promemoria_conferma_il: string | null
 }
 
 export interface AzioneRow {
@@ -352,13 +387,13 @@ export interface IntegrazioneRow {
   ultimo_uso_il: string | null
 }
 
-/** Una prenotazione chiesta dall'assistente (`crm_ai_richieste`). */
+/** Una scrittura chiesta dall'assistente (`crm_ai_richieste`): solo quelle riuscite, con la risposta data. */
 export interface RichiestaAiRow {
   id: string
   scuola_id: string
   integrazione_id: string
   chiave: string
-  operazione: 'prenota'
+  operazione: OperazioneRichiestaAi
   impronta: string
   risposta: Record<string, unknown> | null
   scheda_id: string | null
@@ -394,3 +429,13 @@ export type ParametriRichiamoAi = {
 export type EsitoRichiamoAi =
   | { esito: 'ok'; azione_id: string; scheda_id: string; creata: boolean }
   | { esito: 'non_trovata' | 'nessun_responsabile' | 'token_non_valido' }
+
+/** Quello che `crm_ai_aggiorna_scheda` restituisce. `stato` è quello della scheda dopo la scrittura (nullo se mai scritto). */
+export type EsitoAggiornaSchedaAi =
+  | { esito: 'aggiornata'; scheda_id: string; stato: StatoFamigliaAi | null; non_contattare: boolean; ripetuta?: true }
+  | { esito: 'non_trovata' | 'chiave_riusata' | 'in_corso' | 'token_non_valido' }
+
+/** Quello che `crm_ai_conferma` restituisce. */
+export type EsitoConfermaAi =
+  | { esito: 'registrata'; appuntamento_id: string; scheda_id: string; confermata: boolean; ripetuta?: true }
+  | { esito: 'non_trovato' | 'stato_non_ammesso' | 'chiave_riusata' | 'in_corso' | 'token_non_valido' }
