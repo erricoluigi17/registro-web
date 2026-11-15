@@ -191,6 +191,12 @@ describe('la migrazione', () => {
     `, [SEDE_A, INT_A, IMPRONTA_1])).rejects.toMatchObject({ code: '23514' })
   })
 
+  it('il commento del registro vale per tutte le operazioni, non solo per le prenotazioni', async () => {
+    const { rows } = await db.query<{ c: string }>(`SELECT obj_description('public.crm_ai_richieste'::regclass, 'pg_class') AS c`)
+    expect(rows[0].c).not.toMatch(/una riga per ogni prenotazione/)
+    for (const parola of ['spostamento', 'aggiornamento della scheda', 'conferma']) expect(rows[0].c).toContain(parola)
+  })
+
   it('le colonne nuove: non_contattare nasce falso, il resto vuoto; i vincoli rifiutano stato e riassunto fuori misura', async () => {
     const id = await scheda()
     expect(await rigaScheda(id)).toMatchObject({

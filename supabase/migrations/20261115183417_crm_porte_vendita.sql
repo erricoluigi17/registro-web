@@ -48,6 +48,9 @@ BEGIN
   ALTER TABLE public.crm_ai_richieste ADD CONSTRAINT crm_ai_richieste_operazione CHECK (operazione IN ('prenota','sposta','aggiorna_scheda','conferma'));
 END $$;
 
+COMMENT ON TABLE public.crm_ai_richieste IS
+  'CRM segreteria: una riga per ogni richiesta di scrittura dell''assistente AI (prenotazione, spostamento, aggiornamento della scheda, conferma del promemoria), con la chiave di idempotenza e la risposta data. Serve a non eseguire due volte la stessa richiesta. La risposta contiene solo id, orari ed esito.';
+
 -- ── 3) crm_ai_aggiorna_scheda: stato, riassunto e rifiuto della famiglia ────
 CREATE OR REPLACE FUNCTION public.crm_ai_aggiorna_scheda(
   p_integrazione_id uuid,
