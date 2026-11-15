@@ -471,6 +471,7 @@ export function posterioriCheContengono(
 // registrata una volta sola, con la version del file (migrazioni 281 -> 282); le fotografie della RLS e degli indici unici cambiano solo nell'istante (contenuto identico, verificato con un hash dalla produzione); le altre non cambiano (le funzioni che scrivono nel registro
 // restano 72, `demo_ripristina` con le stesse cinque tabelle).
 export const MIGRAZIONI_ATTESE_AL_MERGE: Readonly<Record<string, string>> = {
+  '20261115183417_crm_porte_vendita.sql': 'L’integrazione applica al merge le colonne della vendita e tre funzioni CRM AI; fotografie nella PR-B.',
 }
 
 /**
