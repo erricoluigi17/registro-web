@@ -285,7 +285,15 @@ export function AnnoNotice() {
   // UNA riga sola (terzo lotto, F2): chi arriva da fuori non deve leggere un paragrafo per sapere che non ha rotto niente.
   // La frase dipende da dove sta l'anno guardato rispetto a quello in corso; il pulsante nomina l'anno vero, non «quello in corso».
   const attivo = ctx.anni.find((a) => a.attivo) ?? null;
-  const passato = attivo ? effettivo.annoInizio < attivo.annoInizio : false;
+  // Tre frasi: «l'anno prossimo» solo per attivo + 1, «un anno passato» prima dell'attivo, e negli altri casi (più lontano, o nessun
+  // anno attivo da confrontare) una frase che non pretende di sapere dove sta l'anno.
+  const chiave = !attivo
+    ? 'annoAvvisoNeutro'
+    : effettivo.annoInizio === attivo.annoInizio + 1
+      ? 'annoAvvisoProssimo'
+      : effettivo.annoInizio < attivo.annoInizio
+        ? 'annoAvvisoPassato'
+        : 'annoAvvisoNeutro';
   // In FLUSSO (mai `fixed`): spinge giù il contenuto invece di coprirlo. `sticky` perché resti visibile
   // scorrendo, appoggiato sotto la barra: sul telefono quella verde (`--kv-appbar-h`), da 744 px la
   // topbar desktop alta 64 px (`top-16`, la stessa che regge il binario e la sidebar). `z-30`: sotto le
@@ -299,7 +307,7 @@ export function AnnoNotice() {
     >
       {/* `basis-full` sul telefono: il pulsante va a capo invece di schiacciare il testo; da 640px sta sulla stessa riga. */}
       <div className="min-w-0 basis-full min-[640px]:flex-1 min-[640px]:basis-0">
-        <p>{t(passato ? 'annoAvvisoPassato' : 'annoAvvisoProssimo', { anno: effettivo.etichettaBreve })}</p>
+        <p>{t(chiave, { anno: effettivo.etichettaBreve })}</p>
       </div>
       <button
         type="button"

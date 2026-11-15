@@ -852,6 +852,7 @@
   "annoStatoChiuso": "closed",
   "annoAvvisoProssimo": "You are looking at next year ({anno}). The current year does not change.",
   "annoAvvisoPassato": "You are looking at a past year ({anno}). The current year does not change.",
+  "annoAvvisoNeutro": "You are looking at {anno}. The current year does not change.",
   "annoAvvisoTornaAl": "Back to {anno}",
   "annoAvvisoTorna": "Back to the current year",
   "annoStatoDiverso": "status differs between locations",

@@ -852,6 +852,7 @@
   "annoStatoChiuso": "chiuso",
   "annoAvvisoProssimo": "Stai guardando l’anno prossimo ({anno}). L’anno in corso non cambia.",
   "annoAvvisoPassato": "Stai guardando un anno passato ({anno}). L’anno in corso non cambia.",
+  "annoAvvisoNeutro": "Stai guardando il {anno}. L’anno in corso non cambia.",
   "annoAvvisoTornaAl": "Torna al {anno}",
   "annoAvvisoTorna": "Torna all’anno in corso",
   "annoStatoDiverso": "stato diverso fra le sedi",

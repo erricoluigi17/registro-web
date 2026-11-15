@@ -138,6 +138,8 @@ type Ancora = {
   seguente: string | null;
   precedente: string | null;
   topPrecedente: number;
+  /** Quante volte è stata applicata (esito, rilettura): alla seconda si consuma. */
+  usi: number;
   timer: ReturnType<typeof setTimeout> | null;
 };
 const rigaEl = (id: string): HTMLElement | null => document.querySelector<HTMLElement>(`tr[data-riga-id="${id}"]`);
@@ -361,6 +363,7 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
       seguente: sotto?.getAttribute('data-riga-id') ?? null,
       precedente: sopra?.getAttribute('data-riga-id') ?? null,
       topPrecedente: sopra ? sopra.getBoundingClientRect().top : 0,
+      usi: 0,
       timer: null,
     };
     // Se la risposta non arriva mai, l'àncora non resta per sempre: un disegno di molto dopo non deve spostare nessuno.
@@ -369,6 +372,8 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
     }, 8000);
     ancora.current = nuova;
   }, []);
+  // Si applica solo quando l'operazione cambia qualcosa (compare l'esito, arriva la rilettura), mai a un disegno qualunque (una lettera nella
+  // ricerca): al massimo due volte per operazione, poi l'àncora si consuma e la segretaria può scorrere in pace.
   useLayoutEffect(() => {
     const a = ancora.current;
     if (!a) return;
@@ -384,11 +389,13 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
     if (Math.abs(spostamento) >= 1) window.scrollBy({ top: spostamento });
     const attivo = document.activeElement;
     if (!attivo || attivo === document.body || !document.body.contains(attivo)) el.focus({ preventScroll: true });
-    if (a.timer) clearTimeout(a.timer);
-    a.timer = setTimeout(() => {
-      if (ancora.current === a) ancora.current = null;
-    }, 1200);
-  });
+    a.usi += 1;
+    if (a.usi >= 2) {
+      if (a.timer) clearTimeout(a.timer);
+      ancora.current = null;
+    }
+    // Le dipendenze sono APPOSTA solo questi due (esito, lettura): vedi sopra.
+  }, [esito, lettura]);
 
   const fascia = (codice: string): string => {
     switch (codice) {
