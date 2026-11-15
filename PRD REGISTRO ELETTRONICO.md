@@ -1,3 +1,22 @@
+## 🤖 Changelog — CRM: le porte per la vendita nuova (spostare, aggiornare, confermare, giorno, non venute) — 2026-11-15 (ramo `crm-porte-vendita`)
+
+**Stato.** 🟡 Codice nel ramo `crm-porte-vendita`, nessuna PR e nessun merge. La migrazione `20261115183417_crm_porte_vendita.sql` è preparata e provata solo in PGlite, **non applicata**: applicarla lo decide Luigi, e fino ad allora le porte nuove rispondono `503 CRM_NON_INSTALLATO`. L’interruttore resta spento (`CRM_AI_ATTIVO`); le sedi vere entrano solo con `CRM_AI_SEDI_VERE` e `CRM_AI_VERO=1`, spento di default. Provate in sviluppo con l’interruttore spento: ogni porta nuova risponde `404 CRM_AI_SPENTO`.
+
+**Perché.** Il motore della vendita sul Mac (protocollo `Crm`, fase 4) ha bisogno di sette cose che le porte di prima non davano: spostare una visita, scrivere stato, riassunto e «non contattare» sulla scheda, registrare la conferma del promemoria, leggere gli appuntamenti di un giorno e le visite non venute, e sapere dalla scheda per telefono lo stato, il rifiuto e chi ha fissato la visita.
+
+| API sotto `/api/crm/ai` | Cosa fa | Dati esclusi dalla risposta |
+|---|---|---|
+| `POST /prenotazioni/{id}/sposta` | Sposta una visita fissata dalla stessa chiave, in un solo passo SQL | Nomi, recapiti, note |
+| `POST /contatti/aggiorna` | Scrive `stato`, `riassunto` e `nonContattare` su una scheda (per id o per telefono) | Il riassunto non torna mai indietro |
+| `POST /prenotazioni/{id}/conferma` | Registra la risposta della famiglia al promemoria | Nomi, recapiti, note |
+| `GET /prenotazioni?giorno=` | Visite in programma di un giorno, con telefono per scrivere alla famiglia | Nomi, note |
+| `GET /prenotazioni/non-venute` | Visite segnate «non presentato», a pagine con cursore composto | Nomi, note |
+| `POST /contatti/stato` (cambiata) | Aggiunge `stato`, `nonContattare` e, nella visita, `fissataVia`, `modificabile`, `confermata`; i bambini escono come `{id, nascita: "AAAA-MM", esito}` | Nomi, giorno di nascita |
+
+Le scritture nuove vogliono `Idempotency-Key`: stessa chiave e stesso corpo danno la stessa risposta con `ripetuta: true`, stessa chiave e corpo diverso `422 CHIAVE_RIUSATA`. Le fasce d’età per sede non cambiano: nido dai 3 mesi a settembre e infanzia in tutte e tre le sedi, primaria solo a Giugliano e Cesa.
+
+**Contratto.** [docs/crm-ai-porte.md](docs/crm-ai-porte.md) elenca rotte, parametri, risposte, errori, esempi e la tabella «metodo del protocollo `Crm` → porta»; [docs/crm-accesso-ai.md](docs/crm-accesso-ai.md) resta il riferimento per le regole comuni.
+
 ## 🧭 Changelog — Anno scolastico, terzo lotto di semplificazioni dopo il terzo giro della segretaria inesperta (agente 2) — 2026-11-15 (ramo `feat/anno-semplificazioni-3`)
 
 **Perché.** Al terzo giro la segretaria inesperta ha preparato il 2027/28 in Demo senza bloccarsi: obiettivi tutti riusciti, voti da 1 a 3, giudizio «accettabile, vicino al semplice». Restavano piccoli difetti veri: testi che si contraddicono, una scheda che non si apre dove dovrebbe, la pagina che salta in cima, nessun segno di caricamento. Quattro lotti (F1-F4) li correggono. Nessuna migrazione, nessuna route nuova.

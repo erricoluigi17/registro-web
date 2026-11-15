@@ -1,8 +1,8 @@
 # Accesso dell’assistente al CRM Kidville
 
-Il programma sul Mac può cercare orari per una visita, fissarla o annullarla, registrare e riconoscere un contatto e passare una famiglia alla segreteria. Le sette API sono sotto `/api/crm/ai`.
+Il programma sul Mac può cercare orari per una visita, fissarla o annullarla, registrare e riconoscere un contatto e passare una famiglia alla segreteria. Le dodici API sono sotto `/api/crm/ai`. Le prime sette sono descritte qui sotto; le cinque della vendita (spostare una visita, aggiornare la scheda, confermare il promemoria, appuntamenti del giorno, visite non venute) e la tabella «metodo del motore → porta» sono in [le porte del CRM per la vendita](crm-ai-porte.md), che descrive anche la nuova forma di E2.
 
-L’accesso parte spento. Sul server `CRM_AI_ATTIVO=1` accende le API. `CRM_AI_SEDI_AMMESSE` contiene gli UUID delle sedi ammesse, separati da virgole. Un elenco vuoto non ammette alcuna sede. Il primo collaudo, dopo il sì del titolare, è previsto per la sola sede Demo.
+L’accesso parte spento. Sul server `CRM_AI_ATTIVO=1` accende le API. `CRM_AI_SEDI_AMMESSE` contiene gli UUID delle sedi ammesse, separati da virgole. Un elenco vuoto non ammette alcuna sede. Le sedi vere stanno in `CRM_AI_SEDI_VERE` e entrano solo se anche `CRM_AI_VERO=1` (spento di default): vedi «Ambiente vero» in [le porte del CRM per la vendita](crm-ai-porte.md). Il primo collaudo, dopo il sì del titolare, è previsto per la sola sede Demo.
 
 ## Chiave e chiamate
 
@@ -162,7 +162,7 @@ curl -X POST "$BASE_URL/api/crm/ai/richiami" \
 
 ## Dati restituiti e registro tecnico
 
-Le risposte delle sette API escludono nomi di famiglie, bambini e personale, email, note, date di nascita complete e dettagli sanitari. Il mese di nascita nelle risposte E2 ed E3 serve per la fascia d’età. Il solo E3 restituisce il primo recapito normalizzato per il passaggio dei nuovi contatti della segreteria. L’accesso alle note delle visite (E5) resta fuori da questa versione.
+Le risposte delle dodici API escludono nomi di famiglie, bambini e personale, email, note, date di nascita complete e dettagli sanitari. Il mese di nascita nelle risposte E2 ed E3 serve per la fascia d’età. Il solo E3 restituisce il primo recapito normalizzato per il passaggio dei nuovi contatti della segreteria. L’accesso alle note delle visite (E5) resta fuori da questa versione.
 
 Il middleware riconosce l’indirizzo delle API AI e le passa al controllo della chiave senza usare una sessione web o rinnovare i cookie. Il controllo dell’interruttore, della chiave e del limite viene prima della lettura del corpo. Il registro tecnico `app_log` usa operazione, esito, stato, identificativi tecnici e tempo della richiesta. I rifiuti anonimi del controllo sono registrati al massimo una volta al minuto per istanza. A interruttore spento il rifiuto non scrive nel database. Il wrapper delle API, il limitatore e il trasporto verso il database evitano di registrare URL con query, corpi, header inviati dal client, token, impronte o errori grezzi. Anche un guasto di rete produce una descrizione tecnica e un codice, quando disponibile. Per ritrovare la richiesta si usa l’`x-request-id` generato dal server.
 
