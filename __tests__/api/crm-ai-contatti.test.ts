@@ -407,6 +407,16 @@ describe('E2 · stato contatto', () => {
     expect(h.lette).not.toContain('crm_schede')
   })
 
+  it('una colonna della migrazione mancante nei dettagli (42703) risponde 503 senza testo grezzo', async () => {
+    h.db.crm_schede.push(scheda())
+    h.errori.crm_appuntamenti = { code: '42703', message: NOME_BIMBO, details: NASCITA, hint: NOTA }
+    const r = await stato()
+    expect(r.status).toBe(503)
+    const j = await r.json()
+    expect(j).toMatchObject({ codice: 'CRM_NON_INSTALLATO' })
+    nessunNomeIn([j, h.logErrore.mock.calls, h.logEvento.mock.calls], [NOME_BIMBO, NASCITA, NOTA])
+  })
+
   it('un errore nei dettagli restituisce solo il codice tecnico al logger e nessuna scheda parziale', async () => {
     h.db.crm_schede.push(scheda())
     h.errori.crm_bambini = { code: '42501', message: NOME_BIMBO, details: NASCITA, hint: NOTA }
@@ -500,6 +510,16 @@ describe('E3 · nuovi contatti', () => {
     expect(r.status).toBe(500)
     expect(await r.json()).toMatchObject({ codice: 'CRM_OPERAZIONE_NON_RIUSCITA' })
     expect(h.logErrore).toHaveBeenCalledWith(expect.objectContaining({ operazione: 'crm/ai/contatti/nuovi' }), { code: '42501' })
+  })
+
+  it('una colonna della migrazione mancante nei dettagli (42703) risponde 503 senza testo grezzo', async () => {
+    h.db.crm_schede.push(scheda())
+    h.errori.crm_appuntamenti = { code: '42703', message: NOME_GENITORE, details: TEL, hint: NOTA }
+    const r = await nuovi()
+    expect(r.status).toBe(503)
+    const j = await r.json()
+    expect(j).toMatchObject({ codice: 'CRM_NON_INSTALLATO' })
+    nessunNomeIn([j, h.logErrore.mock.calls, h.logEvento.mock.calls], [NOME_GENITORE, TEL, NOTA])
   })
 
   it.each([

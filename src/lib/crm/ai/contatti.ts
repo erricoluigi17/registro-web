@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { NextResponse } from 'next/server'
-import { rispostaCrmNonRiuscita, rispostaErroreDb, rispostaErroreDbSchema } from '@/lib/crm/errori'
+import { rispostaCrmNonRiuscita, rispostaErroreDbSchema } from '@/lib/crm/errori'
 import type { AppuntamentoRow, BambinoRow, SchedaRow } from '@/lib/crm/tipi'
 import { logEvento } from '@/lib/logging/logger'
 import { erroreDbSoloCodice } from '@/lib/supabase/errore-tecnico'
@@ -105,7 +105,7 @@ export async function dettagliSchede(
       .overrideTypes<BambinoScheda[], { merge: false }>(),
   ])
   const errore = appuntamenti.error ?? bambini.error
-  if (errore) return { response: rispostaErroreDb(erroreDbSoloCodice(errore), operazione) }
+  if (errore) return { response: rispostaErroreDbSchema(erroreDbSoloCodice(errore), operazione) }
 
   // Al tetto di PostgREST le righe possono essere state tagliate senza errore.
   if (Math.max(appuntamenti.data?.length ?? 0, bambini.data?.length ?? 0) >= LIMITE_RIGHE_POSTGREST) {
@@ -146,7 +146,7 @@ export async function recapitiSchede(
     .eq('scuola_id', scuolaId)
     .in('id', schedaIds)
     .overrideTypes<Pick<SchedaRow, 'id' | 'telefoni_norm' | 'non_contattare' | 'anonimizzata_il'>[], { merge: false }>()
-  if (error) return { response: rispostaErroreDb(erroreDbSoloCodice(error), operazione) }
+  if (error) return { response: rispostaErroreDbSchema(erroreDbSoloCodice(error), operazione) }
   if ((data?.length ?? 0) >= LIMITE_RIGHE_POSTGREST) return { response: rispostaTettoRaggiunto(scuolaId, operazione) }
 
   for (const scheda of data ?? []) {

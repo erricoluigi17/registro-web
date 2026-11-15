@@ -195,6 +195,17 @@ describe('appuntamenti del giorno', () => {
     expect(h.logErrore).toHaveBeenCalledWith(expect.objectContaining({ operazione: 'crm/ai/prenotazioni' }), { code: '42501' })
   })
 
+  it('una colonna della migrazione mancante nelle schede (42703) risponde 503 senza testo grezzo', async () => {
+    h.db.crm_schede.push(scheda())
+    h.db.crm_appuntamenti.push(visita())
+    h.errori.crm_schede = { code: '42703', message: NOME_GENITORE, details: TEL_NORM, hint: NOTA }
+    const r = await giorno()
+    expect(r.status).toBe(503)
+    const j = await r.json()
+    expect(j).toMatchObject({ codice: 'CRM_NON_INSTALLATO' })
+    nessunNomeIn([j, h.logErrore.mock.calls, h.logEvento.mock.calls], [NOME_GENITORE, TEL_NORM, NOTA])
+  })
+
   it('un elenco di visite troncato da PostgREST non produce una risposta parziale', async () => {
     h.db.crm_schede.push(scheda())
     h.db.crm_appuntamenti = Array.from({ length: 1001 }, (_, i) => visita({

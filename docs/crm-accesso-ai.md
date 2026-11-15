@@ -162,7 +162,7 @@ curl -X POST "$BASE_URL/api/crm/ai/richiami" \
 
 ## Dati restituiti e registro tecnico
 
-Le risposte delle dodici API escludono nomi di famiglie, bambini e personale, email, note, date di nascita complete e dettagli sanitari. Il mese di nascita nelle risposte E2 ed E3 serve per la fascia d’età. Il solo E3 restituisce il primo recapito normalizzato per il passaggio dei nuovi contatti della segreteria. L’accesso alle note delle visite (E5) resta fuori da questa versione.
+Le risposte delle dodici API escludono nomi di famiglie, bambini e personale, email, note, date di nascita complete e dettagli sanitari. Il mese di nascita nelle risposte E2 ed E3 serve per la fascia d’età. Il primo recapito normalizzato esce solo da E3 (nuovi contatti della segreteria), dagli appuntamenti del giorno e dalle visite non venute, per scrivere alla famiglia. L’accesso alle note delle visite (E5) resta fuori da questa versione.
 
 Il middleware riconosce l’indirizzo delle API AI e le passa al controllo della chiave senza usare una sessione web o rinnovare i cookie. Il controllo dell’interruttore, della chiave e del limite viene prima della lettura del corpo. Il registro tecnico `app_log` usa operazione, esito, stato, identificativi tecnici e tempo della richiesta. I rifiuti anonimi del controllo sono registrati al massimo una volta al minuto per istanza. A interruttore spento il rifiuto non scrive nel database. Il wrapper delle API, il limitatore e il trasporto verso il database evitano di registrare URL con query, corpi, header inviati dal client, token, impronte o errori grezzi. Anche un guasto di rete produce una descrizione tecnica e un codice, quando disponibile. Per ritrovare la richiesta si usa l’`x-request-id` generato dal server.
 
