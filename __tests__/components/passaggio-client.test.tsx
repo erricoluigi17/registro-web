@@ -262,7 +262,7 @@ describe('PassaggioClient · gli stati', () => {
     const contatori = screen.getByRole('group', { name: itPassaggio.contatoriEtichetta })
     await waitFor(() => expect(within(contatori).getByRole('button', { name: /Non hanno risposto\s*2/ })).toBeTruthy())
     expect(within(contatori).getByRole('button', { name: /Continuano\s*1/ })).toBeTruthy()
-    expect(within(contatori).getByRole('button', { name: /Escono: hanno detto no\s*1/ })).toBeTruthy()
+    expect(within(contatori).getByRole('button', { name: /Escono: già deciso\s*1/ })).toBeTruthy()
   })
 
   it('un contatore filtra l’elenco: la richiesta porta l’esito e restano solo quei bambini', async () => {
@@ -666,11 +666,11 @@ describe('PassaggioClient · F3-1 · tornando all’anno in corso non sembra di 
 })
 
 describe('PassaggioClient · F3-2 · «Escono» e «Non hanno risposto» non si contraddicono', () => {
-  it('le due etichette dicono chi ha detto no e chi non ha risposto', async () => {
+  it('le due etichette dicono chi esce per scelta e chi non ha risposto', async () => {
     render(<PassaggioClient />)
     await screen.findByText('NomeUno CognomeUno')
     const contatori = screen.getByRole('group', { name: itPassaggio.contatoriEtichetta })
-    expect(await within(contatori).findByRole('button', { name: /Escono: hanno detto no\s*1/ })).toBeTruthy()
+    expect(await within(contatori).findByRole('button', { name: /Escono: già deciso\s*1/ })).toBeTruthy()
     expect(within(contatori).getByRole('button', { name: /Non hanno risposto\s*2/ })).toBeTruthy()
   })
 
