@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -128,11 +128,31 @@ const dataDi = (r: Risposta): Record<string, unknown> | null => {
   return d !== null && typeof d === 'object' && !Array.isArray(d) ? (d as Record<string, unknown>) : null;
 };
 
+/** Senza accenti né maiuscole: «Èlia» si trova scrivendo «elia». */
+const normalizza = (x: string): string => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+/** Dove stava la riga su cui la segreteria ha appena lavorato, per riportarcela dopo che la pagina si è mossa (vedi `ElencoConferme`). */
+type Ancora = {
+  id: string;
+  top: number;
+  seguente: string | null;
+  precedente: string | null;
+  topPrecedente: number;
+  timer: ReturnType<typeof setTimeout> | null;
+};
+const rigaEl = (id: string): HTMLElement | null => document.querySelector<HTMLElement>(`tr[data-riga-id="${id}"]`);
+const rigaVicina = (el: HTMLElement, verso: 'next' | 'prev'): HTMLElement | null => {
+  let x = verso === 'next' ? el.nextElementSibling : el.previousElementSibling;
+  while (x && !x.hasAttribute('data-riga-id')) x = verso === 'next' ? x.nextElementSibling : x.previousElementSibling;
+  return x as HTMLElement | null;
+};
+
 const nonTenereVecchi = (): boolean => false; // modulo-livello: stabile fra i render, serve nelle dipendenze dell'effetto
 
 /** Legge una volta per `chiave` (l'URL e la versione); finché non arriva la risposta nuova resta in vista quella di prima. */
 function useLettura<T>(
-  url: string,
+  /** `null` = non leggere (la lettura resta «in caricamento»): serve a chi legge qualcosa solo in certi casi. */
+  url: string | null,
   userId: string,
   versione: number,
   estrai: (r: Risposta) => T | null,
@@ -142,6 +162,7 @@ function useLettura<T>(
   const [stato, setStato] = useState<{ chiave: string; lettura: Lettura<T> } | null>(null);
   const chiave = `${url}#${versione}`;
   useEffect(() => {
+    if (url === null) return;
     let attivo = true;
     chiama('GET', url, userId).then((r) => {
       if (!attivo) return;
@@ -277,6 +298,18 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
   // La voce si copia all'apertura: la finestra tiene i SUOI numeri (già incassato, resta) e la riga dietro si aggiorna da sola.
   const [incasso, setIncasso] = useState<PagamentoRow | null>(null);
 
+  // «Cerca un bambino»: filtra le righe della pagina, insieme ai filtri (che li applica la route).
+  const [cerca, setCerca] = useState('');
+  const cercaId = useId();
+  // Il totale SENZA filtro, per dire «21 su 25»: si legge solo se un filtro è acceso (`limite=1`: serve il conteggio, non le righe).
+  const lettTutti = useLettura(
+    filtro === 'tutti' ? null : `${base}/conferme?pagina=1&limite=1&vista=${vista}&conferma=tutti${ambito ? '&ambito=anno' : ''}`,
+    uid,
+    versione,
+    estraiElenco,
+    tieniElenco,
+  );
+  // (La lettura principale viene DOPO: i suoi effetti partono per ultimi, e «l'ultima chiamata» resta quella dell'elenco.)
   const lettura = useLettura(
     `${base}/conferme?pagina=${pagina}&vista=${vista}&conferma=${filtro}${ambito ? '&ambito=anno' : ''}${modulo ? `&modulo=${modulo}` : ''}`,
     uid,
@@ -308,6 +341,54 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
     setPagina(1);
   }, []);
   const aggiorna = useCallback((frequenzaId: string, a: Aggiornamento) => setAggiornate((x) => ({ ...x, [frequenzaId]: a })), []);
+
+  // ─── LA PAGINA NON DEVE FAR PERDERE IL FILO (terzo lotto, F2) ───────────────────────────────────────────────────────────────
+  // Dopo «Conferma» il messaggio d'esito compare sopra la tabella, il pulsante cliccato sparisce dalla riga (e con lui il fuoco) e,
+  // con un filtro, la riga stessa esce dall'elenco: la segreteria si ritrovava in un altro punto, con il fuoco sul niente.
+  // Prima di scrivere si ricorda dove sta la riga; a ogni disegno successivo, per un attimo, la si riporta nello stesso punto dello
+  // schermo (si misura DOPO che il browser ha fatto il suo lavoro, quindi non si somma al suo scorrimento automatico) e il fuoco passa
+  // alla riga — o, se è uscita dall'elenco, a quella che ha preso il suo posto.
+  const ancora = useRef<Ancora | null>(null);
+  const ricordaAncora = useCallback((id: string) => {
+    const el = rigaEl(id);
+    if (!el) return;
+    const sotto = rigaVicina(el, 'next');
+    const sopra = rigaVicina(el, 'prev');
+    if (ancora.current?.timer) clearTimeout(ancora.current.timer);
+    const nuova: Ancora = {
+      id,
+      top: el.getBoundingClientRect().top,
+      seguente: sotto?.getAttribute('data-riga-id') ?? null,
+      precedente: sopra?.getAttribute('data-riga-id') ?? null,
+      topPrecedente: sopra ? sopra.getBoundingClientRect().top : 0,
+      timer: null,
+    };
+    // Se la risposta non arriva mai, l'àncora non resta per sempre: un disegno di molto dopo non deve spostare nessuno.
+    nuova.timer = setTimeout(() => {
+      if (ancora.current === nuova) ancora.current = null;
+    }, 8000);
+    ancora.current = nuova;
+  }, []);
+  useLayoutEffect(() => {
+    const a = ancora.current;
+    if (!a) return;
+    let el = rigaEl(a.id);
+    let atteso = a.top;
+    if (!el && a.seguente) el = rigaEl(a.seguente); // la riga è uscita: chi sta sotto prende il suo posto, nello stesso punto
+    if (!el && a.precedente) {
+      el = rigaEl(a.precedente);
+      atteso = a.topPrecedente;
+    }
+    if (!el) return;
+    const spostamento = el.getBoundingClientRect().top - atteso;
+    if (Math.abs(spostamento) >= 1) window.scrollBy({ top: spostamento });
+    const attivo = document.activeElement;
+    if (!attivo || attivo === document.body || !document.body.contains(attivo)) el.focus({ preventScroll: true });
+    if (a.timer) clearTimeout(a.timer);
+    a.timer = setTimeout(() => {
+      if (ancora.current === a) ancora.current = null;
+    }, 1200);
+  });
 
   const fascia = (codice: string): string => {
     switch (codice) {
@@ -341,8 +422,13 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
   const { righe, totale, limite, posti, vociNonLette } = lettura.dati;
   const obsoleta = lettura.obsoleta;
   const pagine = Math.max(1, Math.ceil(totale / limite));
-  // Il filtro lo applica la route: `righe` è già la pagina giusta e `totale` è il totale del filtro.
-  const visibili = righe;
+  // Il filtro lo applica la route: `righe` è già la pagina giusta e `totale` è il totale del filtro. La ricerca per nome lavora sulla
+  // pagina in vista: ogni parola scritta deve stare nel nome o nel cognome (in qualunque ordine), senza accenti né maiuscole.
+  const parole = normalizza(cerca).split(/\s+/).filter(Boolean);
+  const visibili = parole.length === 0 ? righe : righe.filter((r) => {
+    const nomeCompleto = normalizza(`${r.nome ?? ''} ${r.cognome ?? ''}`);
+    return parole.every((p) => nomeCompleto.includes(p));
+  });
   const oltre = posti.filter((p) => p.oltre);
   // Bambini in classi che non hanno la fascia: i posti per fascia non li contano (si sceglie la fascia nella scheda Classi).
   const senzaFascia = posti.find((p) => p.fascia === 'senza_fascia')?.iscritti ?? 0;
@@ -414,6 +500,27 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
         }}
         options={filtri}
       />
+      {filtro !== 'tutti' && (
+        <div data-testid="filtro-attivo" className="mt-2 flex flex-wrap items-center gap-3 rounded-input border border-kidville-line bg-kidville-yellow-soft px-3 py-2 font-maven text-sm text-kidville-ink">
+          <p className="m-0">
+            {lettTutti.fase === 'ok'
+              ? t('staiVedendo', { filtro: filtri.find((f) => f.id === filtro)?.label ?? '', n: totale, di: lettTutti.dati.totale })
+              : t('staiVedendoSenzaTotale', { filtro: filtri.find((f) => f.id === filtro)?.label ?? '', n: totale })}
+          </p>
+          <button
+            type="button"
+            className={`${secondario} min-h-11`}
+            onClick={() => {
+              setFiltro('tutti');
+              setModulo('');
+              setPagina(1);
+              riparti();
+            }}
+          >
+            {t('mostraTutti')}
+          </button>
+        </div>
+      )}
       {vista === 'nuove' && !ambito && <p className={hint}>{t('nuoveNota')}</p>}
       {ambito && (
         <div className="flex flex-wrap items-center gap-3">
@@ -437,12 +544,27 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
         <button type="button" className={secondario} onClick={rilegge}>{t('azioneAggiorna')}</button>
       </div>
 
+      <div className="mt-3">
+        <label className={label} htmlFor={`${cercaId}-cerca`}>{t('cercaEtichetta')}</label>
+        <input
+          id={`${cercaId}-cerca`}
+          type="search"
+          className={`${input} max-w-xs`}
+          value={cerca}
+          placeholder={t('cercaSegnaposto')}
+          autoComplete="off"
+          onChange={(e) => setCerca(e.target.value)}
+        />
+        {parole.length > 0 && pagine > 1 && <p className={hint}>{t('cercaSoloPagina')}</p>}
+      </div>
+
       {vociNonLette && <p role="status" className="mt-3 rounded-input border border-kidville-line bg-kidville-yellow-soft px-3 py-2 font-maven text-sm text-kidville-ink">{t('incassaNonLetta')}</p>}
 
       {esito && (
         <p
           role={esito.tipo === 'errore' ? 'alert' : 'status'}
           aria-label={t('esitoRegione')}
+          data-esito-conferme
           className={`sticky top-2 z-10 mt-3 rounded-input border border-kidville-line bg-kidville-white px-3 py-2 font-maven text-sm shadow-sm ${esito.tipo === 'errore' ? 'text-kidville-error' : 'text-kidville-success'}`}
         >
           {esito.testo}
@@ -451,9 +573,9 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
 
       {visibili.length === 0 ? (
         <div className="mt-4 space-y-2 font-maven text-sm text-kidville-sub">
-          <p className="m-0">{vista === 'nuove' ? t('vuotoNuove') : t('vuoto')}</p>
+          <p className="m-0">{righe.length > 0 ? t('cercaNessuno') : vista === 'nuove' ? t('vuotoNuove') : t('vuoto')}</p>
           {/* Nessun filtro in corso: l'elenco è davvero vuoto, e la segreteria deve sapere dove arrivano le domande delle famiglie. */}
-          {vista === 'nuove' && filtro === 'tutti' && !ambito && (
+          {righe.length === 0 && vista === 'nuove' && filtro === 'tutti' && !ambito && (
             <>
               <p className="m-0">{t('vuotoNuoveDove')}</p>
               <p className="m-0">
@@ -491,6 +613,7 @@ function ElencoConferme({ annoSedeId }: { annoSedeId: string }) {
                   vociNonLette={vociNonLette}
                   ricordaQuota={ricordaQuota}
                   apriIncasso={setIncasso}
+                  ricordaAncora={ricordaAncora}
                 />
               ))}
             </tbody>
@@ -540,6 +663,7 @@ function RigaConferma({
   vociNonLette,
   ricordaQuota,
   apriIncasso,
+  ricordaAncora,
 }: {
   r: RigaApi;
   vista: Vista;
@@ -554,6 +678,7 @@ function RigaConferma({
   vociNonLette: boolean;
   ricordaQuota: (frequenzaId: string, e: EsitoQuota | null) => void;
   apriIncasso: (p: PagamentoRow) => void;
+  ricordaAncora: (id: string) => void;
 }) {
   const t = useTranslations('annoConferme');
   const id = useId();
@@ -616,6 +741,7 @@ function RigaConferma({
     ok: (d: Record<string, unknown> | null) => string,
     dopo?: (d: Record<string, unknown> | null) => void,
   ): Promise<void> => {
+    ricordaAncora(r.frequenza_id);
     setOccupata(true);
     const risposta = await chiama('POST', url, userId, corpo);
     setOccupata(false);
@@ -678,7 +804,7 @@ function RigaConferma({
 
   return (
     <>
-      <tr className={`${moduliAperti && r.nuova_frequenza_id ? '' : 'border-b '}border-kidville-line align-top`}>
+      <tr data-riga-id={r.frequenza_id} tabIndex={-1} className={`${moduliAperti && r.nuova_frequenza_id ? '' : 'border-b '}border-kidville-line align-top`}>
         <td className="py-3 pr-3">
           {/* Nelle «nuove» il bambino è `in_arrivo`: non sta in «Alunni» e la sua scheda si apre da qui (4.5.15, C2). */}
           {vista === 'nuove' ? (
@@ -796,6 +922,8 @@ function RigaConferma({
               userId={userId}
               segnala={segnala}
               aggiorna={aggiorna}
+              rigaId={r.frequenza_id}
+              ricordaAncora={ricordaAncora}
             />
           </td>
         </tr>
@@ -837,12 +965,17 @@ function PannelloModuli({
   userId,
   segnala,
   aggiorna,
+  rigaId,
+  ricordaAncora,
 }: {
   frequenzaId: string;
   nome: string;
   userId: string;
   segnala: (e: Esito) => void;
   aggiorna: (frequenzaId: string, a: Aggiornamento) => void;
+  /** La riga a cui il pannello appartiene: la pagina la tiene ferma quando compare il messaggio d'esito. */
+  rigaId: string;
+  ricordaAncora: (id: string) => void;
 }) {
   const t = useTranslations('annoConferme');
   const locale = useLocale();
@@ -852,6 +985,19 @@ function PannelloModuli({
   // Le caselle cambiate in questa sessione: valgono finché il server non risponde diversamente.
   const [cambiati, setCambiati] = useState<Record<string, boolean>>({});
   const [occupato, setOccupato] = useState<string | null>(null);
+  // Il pannello si apre sotto la riga, magari fuori dallo schermo: «sembra che il pulsante non faccia niente». All'apertura lo si porta in
+  // vista e il fuoco va al suo titolo (chi usa la tastiera o uno screen reader ci arriva con lui); quando i documenti sono arrivati,
+  // il pannello è più alto e lo si riporta in vista un'altra volta.
+  const radice = useRef<HTMLDivElement>(null);
+  const titolo = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    titolo.current?.focus({ preventScroll: true });
+    radice.current?.scrollIntoView?.({ block: 'nearest' });
+  }, []);
+  const arrivato = lettura.fase === 'ok';
+  useEffect(() => {
+    if (arrivato) radice.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [arrivato]);
 
   const giorno = (iso: string): string => {
     const d = new Date(`${iso}T00:00:00Z`);
@@ -859,6 +1005,7 @@ function PannelloModuli({
   };
 
   const cambia = async (m: ModuloApi, moduli: ModuloApi[], nuovo: boolean): Promise<void> => {
+    ricordaAncora(rigaId);
     setOccupato(m.modulo_id);
     // La spunta si vede SUBITO e la casella resta disabilitata finché il server non risponde: un secondo clic non la toglie.
     setCambiati((c) => ({ ...c, [m.modulo_id]: nuovo }));
@@ -886,7 +1033,8 @@ function PannelloModuli({
   };
 
   return (
-    <div className="sticky left-0 w-[min(100%,calc(100vw-2.5rem))] rounded-input border border-kidville-line bg-kidville-white p-3">
+    <div ref={radice} className="sticky left-0 w-[min(100%,calc(100vw-2.5rem))] rounded-input border border-kidville-line bg-kidville-white p-3">
+      <h3 ref={titolo} tabIndex={-1} className="m-0 mb-2 font-maven text-sm font-bold text-kidville-green">{t('moduliTitolo', { nome })}</h3>
       {lettura.fase === 'carico' && <p role="status" className="font-maven text-sm text-kidville-sub">{t('moduliCaricamento')}</p>}
       {lettura.fase === 'errore' && (
         <div>

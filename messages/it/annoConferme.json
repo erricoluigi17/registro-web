@@ -130,5 +130,13 @@
   "incassaNonLetta": "Non è stato possibile leggere le voci da incassare: l’elenco è giusto, ma «Incassa» è spento per ora. Aggiorna l’elenco fra poco.",
   "incassaVoceMancante": "Non trovo la voce della quota: incassala dalla Contabilità.",
   "confermaSpiega": "«Conferma» vuol dire: il bambino resta a scuola anche l’anno prossimo. La classe nuova si sceglie dopo, nel Passaggio d’anno.",
-  "confermaSpiegaPrimaria": "«Conferma» iscrive il bambino alla primaria, nella classe scelta qui sopra."
+  "confermaSpiegaPrimaria": "«Conferma» iscrive il bambino alla primaria, nella classe scelta qui sopra.",
+  "cercaEtichetta": "Cerca un bambino",
+  "cercaSegnaposto": "Nome o cognome",
+  "cercaNessuno": "Nessun bambino con questo nome in questa pagina dell’elenco.",
+  "cercaSoloPagina": "La ricerca guarda solo questa pagina dell’elenco.",
+  "staiVedendo": "Stai vedendo: {filtro} ({n, plural, one {# bambino} other {# bambini}} su {di})",
+  "staiVedendoSenzaTotale": "Stai vedendo: {filtro} ({n})",
+  "mostraTutti": "Mostra tutti",
+  "moduliTitolo": "Documenti di {nome}"
 }

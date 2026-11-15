@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { SEDE_A, SEDE_B } from '../fixtures/sedi'
 import type { RigaCalendario } from '@/lib/anno-scolastico'
 import type { StatoAnno } from '@/lib/anno/tipi'
@@ -79,16 +79,30 @@ describe('AnnoNotice', () => {
   it('con l\'anno attivo non c\'è nulla nel DOM', () => {
     monta()
     expect(screen.queryByRole('status')).toBeNull()
-    expect(screen.queryByRole('button', { name: /torna all.anno in corso/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^torna al/i })).toBeNull()
   })
 
-  it('con un altro anno: role="status", il testo con lo stato in parole, e il pulsante per tornare', () => {
+  it('con l\'anno prossimo: una riga sola, «Stai guardando l\'anno prossimo (2027/28). L\'anno in corso non cambia.», e il pulsante con l\'anno vero', () => {
     monta()
     fireEvent.click(screen.getByRole('button', { name: 'vai a 2027' }))
 
     const avviso = screen.getByRole('status')
-    expect(avviso).toHaveTextContent(/Stai lavorando sul 2027\/28 \(iscrizioni aperte\): le nuove classi, le votazioni e gli elenchi caricati vanno in quell.anno\. Anche gli elenchi delle classi sul video mostrano quell.anno\./)
-    expect(screen.getByRole('button', { name: /torna all.anno in corso/i })).toBeInTheDocument()
+    expect(avviso).toHaveTextContent('Stai guardando l’anno prossimo (2027/28). L’anno in corso non cambia.')
+    expect(avviso).not.toHaveTextContent(/votazioni|elenchi caricati|Perché/)
+    expect(screen.getByRole('button', { name: 'Torna al 2026/27' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /anno in corso/i })).toBeNull()
+  })
+
+  it('con un anno PASSATO (non chiuso): la frase dice «un anno passato», non «l\'anno prossimo», e il pulsante torna al 2026/27', () => {
+    h.perSede = {
+      [SEDE_A]: [riga(2025, 'in_chiusura', A25), riga(2026, 'corrente', A26), riga(2027, 'in_preparazione', A27)],
+    }
+    monta()
+    fireEvent.click(screen.getByRole('button', { name: 'vai a 2025' }))
+    const avviso = screen.getByRole('status')
+    expect(avviso).toHaveTextContent('Stai guardando un anno passato (2025/26). L’anno in corso non cambia.')
+    expect(avviso).not.toHaveTextContent('anno prossimo')
+    expect(screen.getByRole('button', { name: 'Torna al 2026/27' })).toBeInTheDocument()
   })
 
   it('(PR 4.9) con l\'anno in corso e con un altro anno aperto la riga «si sta chiudendo» non c\'è', () => {
@@ -127,64 +141,30 @@ describe('AnnoNotice', () => {
     expect(cls.some((c) => /truncate|line-clamp|overflow-hidden/.test(c))).toBe(false)
   })
 
-  it('non si può chiudere: i soli pulsanti sono «Torna all\'anno in corso» e «Perché?» (che apre un testo, non chiude l\'avviso)', () => {
+  it('non si può chiudere: il solo pulsante è «Torna al 2026/27» (niente «Perché?», niente «Chiudi»)', () => {
     monta()
     fireEvent.click(screen.getByRole('button', { name: 'vai a 2027' }))
     const avviso = screen.getByRole('status')
     const pulsanti = Array.from(avviso.querySelectorAll('button'))
-    expect(pulsanti.map((b) => b.textContent)).toEqual(['Perché?', 'Torna all’anno in corso'])
-    expect(screen.queryByRole('button', { name: /chiudi|nascondi|ok/i })).toBeNull()
+    expect(pulsanti.map((b) => b.textContent)).toEqual(['Torna al 2026/27'])
+    expect(screen.queryByRole('button', { name: /chiudi|nascondi|ok|perché/i })).toBeNull()
   })
 
-  it('schermo stretto: la riga corta dice anno e stato, il testo lungo sta dietro «Perché?» e si apre e si chiude', () => {
+  // Contratto di classi, NON una misura: jsdom non calcola il layout. Il testo ha base piena (il pulsante va a capo su un telefono
+  // stretto), e dentro l'avviso non c'è nowrap/truncate.
+  it('schermo stretto: il blocco di testo ha base piena, il pulsante è alto 44px, nessun nowrap/truncate', () => {
     monta()
     fireEvent.click(screen.getByRole('button', { name: 'vai a 2027' }))
     const avviso = screen.getByRole('status')
-    // La versione corta c'è e, per CSS, è l'unica visibile sotto i 640px; quella lunga è `hidden` fino a 640px.
-    const corta = screen.getByText('Stai guardando il 2027/28 (iscrizioni aperte)')
-    expect(corta.className).toContain('min-[640px]:hidden')
-    const lunga = screen.getByText(/^Stai lavorando sul 2027\/28/)
-    expect(lunga.className).toContain('hidden')
-    expect(lunga.className).toContain('min-[640px]:inline')
-
-    const perche = screen.getByRole('button', { name: 'Perché vedo questo avviso sul 2027/28' })
-    expect(perche.className).toContain('min-[640px]:hidden')
-    expect(perche).toHaveAttribute('aria-expanded', 'false')
-    expect(avviso.querySelectorAll('#kv-anno-avviso-perche')).toHaveLength(0)
-
-    fireEvent.click(perche)
-    expect(perche).toHaveAttribute('aria-expanded', 'true')
-    expect(avviso.querySelector('#kv-anno-avviso-perche')).toHaveTextContent(/va nel 2027\/28, non nell’anno in corso/)
-
-    fireEvent.click(perche)
-    expect(perche).toHaveAttribute('aria-expanded', 'false')
-    expect(avviso.querySelectorAll('#kv-anno-avviso-perche')).toHaveLength(0)
-    // «Torna» resta sempre al suo posto, aperto o chiuso il «Perché?»
-    expect(screen.getByRole('button', { name: /torna all.anno in corso/i })).toBeInTheDocument()
-  })
-
-  // Contratto di classi, NON una misura: jsdom non calcola il layout e non vede quanto spazio resta davvero.
-  // La prova vera è la misura in Chrome a 320/390/1280 (agente1-schermate/, rapporto). Qui si impedisce solo che
-  // torni la forma che a 390 lasciava ~106px al testo e a 320 ~36px: il testo `flex-1` senza base piena,
-  // oppure `truncate`/`whitespace-nowrap` dentro l'avviso.
-  it('schermo stretto: il blocco di testo ha base piena (il pulsante va a capo), nessun nowrap/truncate nell\'avviso', () => {
-    monta()
-    fireEvent.click(screen.getByRole('button', { name: 'vai a 2027' }))
-    const avviso = screen.getByRole('status')
-    const blocco = screen.getByText('Stai guardando il 2027/28 (iscrizioni aperte)').closest('div') as HTMLElement
+    const blocco = screen.getByText(/^Stai guardando l.anno prossimo/).closest('div') as HTMLElement
     expect(blocco.parentElement).toBe(avviso)
-    expect(avviso.className.split(/\s+/)).toContain('flex-wrap') // senza, il pulsante non va a capo
-    // Le due aree di tocco sono pulsanti figli diretti dell'avviso, alti min 44px per costruzione: stanno su
-    // righe/colonne proprie e non si sovrappongono (nessuna estensione `after:-inset` che dipende dal font).
-    for (const nome of [/^Perché vedo questo avviso sul 2027\/28$/, /torna all.anno in corso/i]) {
-      const b = screen.getByRole('button', { name: nome })
-      expect(b.parentElement).toBe(avviso)
-      expect(b.className.split(/\s+/)).toContain('min-h-[44px]')
-      expect(b.className).not.toMatch(/after:|-inset-/)
-    }
+    expect(avviso.className.split(/\s+/)).toContain('flex-wrap')
+    const b = screen.getByRole('button', { name: 'Torna al 2026/27' })
+    expect(b.parentElement).toBe(avviso)
+    expect(b.className.split(/\s+/)).toContain('min-h-[44px]')
     const cls = blocco.className.split(/\s+/)
     expect(cls).toContain('basis-full')
-    expect(cls).not.toContain('flex-1') // solo `min-[640px]:flex-1`
+    expect(cls).not.toContain('flex-1')
     expect(cls).toContain('min-[640px]:flex-1')
     for (const el of [avviso, ...Array.from(avviso.querySelectorAll('*'))]) {
       expect(el.className.toString()).not.toMatch(/whitespace-nowrap|truncate|line-clamp|overflow-hidden/)
@@ -196,7 +176,7 @@ describe('AnnoNotice', () => {
     fireEvent.click(screen.getByRole('button', { name: 'vai a 2027' }))
     expect(document.cookie).toContain(`anno_attivo=${A27}`)
 
-    fireEvent.click(screen.getByRole('button', { name: /torna all.anno in corso/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Torna al 2026/27' }))
     expect(screen.queryByRole('status')).toBeNull()
     expect(document.cookie).not.toContain('anno_attivo=2')
   })
@@ -226,16 +206,7 @@ describe('AnnoNotice', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
-  it('con l\'anno scelto in chiusura dice «(in chiusura)»', () => {
-    h.perSede = {
-      [SEDE_A]: [riga(2025, 'in_chiusura', A25), riga(2026, 'corrente', A26), riga(2027, 'in_preparazione', A27)],
-    }
-    monta()
-    fireEvent.click(screen.getByRole('button', { name: 'vai a 2025' }))
-    expect(screen.getByRole('status')).toHaveTextContent(/Stai lavorando sul 2025\/26 \(in chiusura\): le nuove classi/)
-  })
-
-  it('con più sedi: stato comune → lo stato; stato diverso fra le sedi → dicitura neutra', () => {
+  it('con più sedi: l\'avviso non dipende dallo stato delle sedi (una riga sola, uguale se concordano o no)', () => {
     h.effettive = [SEDE_A, SEDE_B]
     h.perSede = {
       [SEDE_A]: [riga(2026, 'corrente', A26), riga(2027, 'iscrizioni_aperte', A27)],
@@ -243,19 +214,8 @@ describe('AnnoNotice', () => {
     }
     monta()
     fireEvent.click(screen.getByRole('button', { name: 'vai a 2027' }))
-    const avviso = screen.getByRole('status')
-    expect(avviso).toHaveTextContent(/Stai lavorando sul 2027\/28 \(stato diverso fra le sedi\): le nuove classi/)
-    expect(avviso).not.toHaveTextContent('iscrizioni aperte')
-    expect(avviso).not.toHaveTextContent('in preparazione')
-
-    h.perSede = {
-      [SEDE_A]: [riga(2026, 'corrente', A26), riga(2027, 'iscrizioni_aperte', A27)],
-      [SEDE_B]: [riga(2026, 'corrente', A26), riga(2027, 'iscrizioni_aperte', A27)],
-    }
-    cleanup()
-    monta()
-    fireEvent.click(screen.getByRole('button', { name: 'vai a 2027' }))
-    expect(screen.getByRole('status')).toHaveTextContent(/Stai lavorando sul 2027\/28 \(iscrizioni aperte\): le nuove classi, le votazioni e gli elenchi caricati vanno in quell.anno\. Anche gli elenchi delle classi sul video mostrano quell.anno\./)
+    expect(screen.getByRole('status')).toHaveTextContent('Stai guardando l’anno prossimo (2027/28). L’anno in corso non cambia.')
+    expect(screen.getByRole('button', { name: 'Torna al 2026/27' })).toBeInTheDocument()
   })
 
   it('un docente non lo vede, anche se sceglie un altro anno', () => {
