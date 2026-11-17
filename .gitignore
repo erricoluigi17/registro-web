@@ -163,3 +163,7 @@ elenchi-classi/
 # porterebbe dentro senza che nessuno lo abbia deciso.
 design-export/
 /.swc
+
+# aggiunte 2026-11-17 per la sincronia
+.archify/
+**/.gradle/
