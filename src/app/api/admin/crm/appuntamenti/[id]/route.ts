@@ -138,10 +138,12 @@ export const PATCH = withRoute(
         const esito = await aggiornaSeInProgramma(supabase, {
           id,
           scuolaId,
-          // Con un nuovo orario la conferma data per il vecchio non vale più: va richiesta di nuovo.
+          // Con un nuovo orario la conferma data per il vecchio non vale più: va richiesta di nuovo. Se la visita letta
+          // non ha la colonna (la migrazione della vendita del 15/11/2026 non è ancora applicata) non c'è niente da
+          // azzerare: scriverla darebbe un errore su uno spostamento che invece deve riuscire.
           campi: {
             inizio, fine, durata_min: durata, assegnata_a: assegnataA,
-            ...(cambiaOrario && { promemoria_conferma: null, promemoria_conferma_il: null }),
+            ...(cambiaOrario && 'promemoria_conferma' in visita && { promemoria_conferma: null, promemoria_conferma_il: null }),
           },
           operazione,
         })

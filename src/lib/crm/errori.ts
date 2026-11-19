@@ -101,6 +101,16 @@ export function tabellaAssente(error: unknown): boolean {
   return TABELLA_ASSENTE.has(codiceErroreDb(error))
 }
 
+/**
+ * L'errore dice che una COLONNA non c'è (`42703` in lettura, `PGRST204` in scrittura): è la finestra fra il deploy e una
+ * migrazione che aggiunge colonne. Chi la legge ripiega sulla `select` di prima invece di fallire (l'elenco delle schede, con
+ * le colonne della vendita del 15/11/2026).
+ */
+export function colonnaAssente(error: unknown): boolean {
+  const codice = codiceErroreDb(error)
+  return codice === '42703' || codice === 'PGRST204'
+}
+
 /** Come `rispostaErroreDb`, ma anche una funzione o una colonna mancante è «non installato» (503), non un 500. */
 export function rispostaErroreDbSchema(error: { code?: string; message?: string }, operazione: string): NextResponse {
   if (CODICI_SCHEMA_CRM_ASSENTE.has(codiceErroreDb(error))) return schemaAssente(error, operazione)

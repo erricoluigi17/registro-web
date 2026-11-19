@@ -11,7 +11,7 @@ import { risolviAnnoScelto, valoriAnnoScelto, type AnnoSceltoScheda } from '@/li
 import type { EsitoAnno } from '@/lib/anno/tipi'
 import { requireCrm } from '@/lib/crm/accesso'
 import { contattiNormalizzati, normalizzaEmail, normalizzaTelefono } from '@/lib/crm/contatti'
-import { rispostaErroreDb } from '@/lib/crm/errori'
+import { colonnaAssente, rispostaErroreDb } from '@/lib/crm/errori'
 import { registraEvento } from '@/lib/crm/eventi'
 import { ANNI_INGRESSO, ESITI_BAMBINO, ORIGINI, type AnnoIngresso, type Origine } from '@/lib/crm/tipi'
 import { descriviTetto, leggiABlocchi, type QueryABlocchi } from '@/lib/db/leggi-a-blocchi'
@@ -43,6 +43,12 @@ import { parseBody, parseQuery } from '@/lib/validation/http'
  * di PostgREST è muto — un elenco «completo» che manca di schede è il difetto peggiore di un CRM.
  *
  * Solo le schede della pagina chiesta ricevono poi bambini, prossima visita e prossimo richiamo.
+ *
+ * ── Le colonne della vendita ─────────────────────────────────────────────────────────────────────
+ * Ogni riga porta anche `non_contattare` (la famiglia ha chiesto di non essere contattata) e
+ * `prossima_visita_confermata` (la risposta al promemoria della prossima visita: vero, falso o nullo). Le
+ * colonne le aggiunge la migrazione del 15/11/2026: finché non c'è (`42703`) la pagina si rilegge senza di
+ * loro, le righe dicono `false` e `null`, e un `warn` lo scrive nel log. L'elenco non si rompe per questo.
  */
 
 const OPERAZIONE_GET = 'admin/crm/schede:GET'
@@ -264,46 +270,68 @@ export const GET = withRoute('admin/crm/schede:GET', async (request: NextRequest
 
   // 4 · il contenuto delle sole schede della pagina (50 id: un solo `.in()`)
   const adesso = new Date().toISOString()
-  const [schede, bambini, visite, richiami] = await Promise.all([
-    supabase.from('crm_schede').select('id, genitore_nome, origine, creata_il').in('scuola_id', scuole).in('id', idPagina),
-    supabase
-      .from('crm_bambini')
-      .select('id, scheda_id, nome, esito, domanda_id, creata_il')
-      .in('scuola_id', scuole)
-      .in('scheda_id', idPagina)
-      .order('creata_il', { ascending: true })
-      .order('id', { ascending: true }),
-    supabase
-      .from('crm_appuntamenti')
-      .select('scheda_id, inizio')
-      .in('scuola_id', scuole)
-      .in('scheda_id', idPagina)
-      .eq('stato', 'in_programma')
-      .gte('inizio', adesso),
-    supabase
-      .from('crm_azioni')
-      .select('scheda_id, scadenza')
-      .in('scuola_id', scuole)
-      .in('scheda_id', idPagina)
-      .is('fatta_il', null)
-      .is('cancellata_il', null),
-  ])
+  const leggiPagina = (colonneVendita: boolean) =>
+    Promise.all([
+      supabase
+        .from('crm_schede')
+        .select(colonneVendita ? 'id, genitore_nome, origine, creata_il, non_contattare' : 'id, genitore_nome, origine, creata_il')
+        .in('scuola_id', scuole)
+        .in('id', idPagina),
+      supabase
+        .from('crm_bambini')
+        .select('id, scheda_id, nome, esito, domanda_id, creata_il')
+        .in('scuola_id', scuole)
+        .in('scheda_id', idPagina)
+        .order('creata_il', { ascending: true })
+        .order('id', { ascending: true }),
+      supabase
+        .from('crm_appuntamenti')
+        .select(colonneVendita ? 'scheda_id, inizio, promemoria_conferma' : 'scheda_id, inizio')
+        .in('scuola_id', scuole)
+        .in('scheda_id', idPagina)
+        .eq('stato', 'in_programma')
+        .gte('inizio', adesso),
+      supabase
+        .from('crm_azioni')
+        .select('scheda_id, scadenza')
+        .in('scuola_id', scuole)
+        .in('scheda_id', idPagina)
+        .is('fatta_il', null)
+        .is('cancellata_il', null),
+    ])
+  let [schede, bambini, visite, richiami] = await leggiPagina(true)
+  let colonneVendita = true
+  // La migrazione della vendita non c'è ancora: la stessa pagina senza le due colonne nuove, e il caso nel log.
+  if (colonnaAssente(schede.error) || colonnaAssente(visite.error)) {
+    logEvento('crm', 'warn', { operazione: OPERAZIONE_GET, esito: 'colonne-vendita-assenti' }, schede.error ?? visite.error)
+    colonneVendita = false
+    ;[schede, bambini, visite, richiami] = await leggiPagina(false)
+  }
   const guasto = [schede, bambini, visite, richiami].find((r) => r.error)?.error
   if (guasto) return rispostaErroreDb(guasto, OPERAZIONE_GET)
 
   const prima = (valori: string[]): string | null =>
     valori.length === 0 ? null : valori.reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b))
-  const perId = new Map((schede.data ?? []).map((s) => [s.id as string, s]))
+  const perId = new Map((schede.data ?? []).map((s) => [(s as unknown as { id: string }).id, s]))
+
+  /** La prossima visita è la prima in programma: la sua risposta al promemoria (vero, falso, nullo) è quella che conta. */
+  const prossimaVisita = (id: string) => {
+    // `select` con colonne scelte a runtime: il tipo della riga lo dichiariamo noi.
+    const tutte = (visite.data ?? []) as unknown as { scheda_id: string; inizio: string; promemoria_conferma?: boolean | null }[]
+    const sue = tutte.filter((v) => v.scheda_id === id)
+    return sue.length === 0 ? null : sue.reduce((a, b) => (Date.parse(a.inizio) <= Date.parse(b.inizio) ? a : b))
+  }
 
   const data = idPagina.flatMap((id) => {
-    const s = perId.get(id)
+    const s = perId.get(id) as unknown as { genitore_nome: string | null; origine: string; creata_il: string; non_contattare?: boolean } | undefined
     if (!s) return []
+    const visita = prossimaVisita(id)
     return [
       {
         id,
-        genitore_nome: (s.genitore_nome as string | null) ?? null,
-        origine: s.origine as string,
-        creata_il: s.creata_il as string,
+        genitore_nome: s.genitore_nome ?? null,
+        origine: s.origine,
+        creata_il: s.creata_il,
         bambini: (bambini.data ?? [])
           .filter((b) => b.scheda_id === id)
           .map((b) => ({
@@ -312,8 +340,10 @@ export const GET = withRoute('admin/crm/schede:GET', async (request: NextRequest
             esito: b.esito as string,
             domanda_id: (b.domanda_id as string | null) ?? null,
           })),
-        prossima_visita: prima((visite.data ?? []).filter((v) => v.scheda_id === id).map((v) => v.inizio as string)),
+        prossima_visita: visita?.inizio ?? null,
         prossima_azione: prima((richiami.data ?? []).filter((z) => z.scheda_id === id).map((z) => z.scadenza as string)),
+        non_contattare: colonneVendita && s.non_contattare === true,
+        prossima_visita_confermata: colonneVendita && typeof visita?.promemoria_conferma === 'boolean' ? visita.promemoria_conferma : null,
       },
     ]
   })
