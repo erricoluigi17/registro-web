@@ -8,7 +8,7 @@ Negli esempi `BASE_URL` è l’origine HTTPS autorizzata e `CRM_AI_TOKEN` contie
 
 La migrazione `supabase/migrations/20261115183417_crm_porte_vendita.sql` aggiunge le colonne della vendita sulla scheda e sulla visita e le funzioni SQL delle porte nuove. Non è applicata: fino al merge e alla sua applicazione le porte nuove rispondono `503 CRM_NON_INSTALLATO`. Le porte nuove sono `sposta`, `aggiorna`, `conferma`, gli appuntamenti del giorno e `non-venute`. La porta `contatti/stato` cambia forma (vedi la sezione 5) e legge le colonne nuove, quindi risponde anch’essa `503` finché la migrazione manca. Le porte `slot`, `prenota`, annulla e `richiami` funzionano come prima. `contatti` e `contatti/nuovi` funzionano come prima solo quando non devono leggere visite o schede già presenti (elenco vuoto, scheda appena creata); altrimenti leggono colonne della migrazione e rispondono `503 CRM_NON_INSTALLATO`. Applicarla lo decide Luigi.
 
-**Ordine di pubblicazione.** Il codice si pubblica solo con la migrazione già applicata. Se va online prima, le letture che toccano le colonne nuove (E1, E2 e E3 della scheda, dei contatti e delle visite) rispondono `503 CRM_NON_INSTALLATO`, e lo spostamento di una visita dalla segreteria (che azzera la conferma del promemoria) dà errore. L’ordine è: applicare la migrazione, poi pubblicare il codice.
+**Ordine di pubblicazione.** Il codice si pubblica meglio con la migrazione già applicata. Se va online prima, le porte dell’assistente che toccano le colonne nuove (E1, E2 e E3 della scheda, dei contatti e delle visite) rispondono `503 CRM_NON_INSTALLATO`; le schermate della segreteria invece continuano a funzionare (elenco e scheda senza i segni nuovi, spostamento di una visita compreso), e solo il comando «non contattare» dice `503`. L’ordine consigliato resta: applicare la migrazione, poi pubblicare il codice.
 
 L’interruttore resta spento: senza `CRM_AI_ATTIVO=1` ogni porta risponde `404 CRM_AI_SPENTO` e non tocca il database.
 
@@ -240,7 +240,21 @@ curl -X POST "$BASE_URL/api/crm/ai/richiami" \
 
 ## Prima di accendere `CRM_AI_VERO`
 
-Serve una schermata della segreteria che mostri e permetta di togliere `non_contattare`, e che mostri stato, riassunto e conferma del promemoria. Oggi nessuna schermata li mostra: l’assistente può accendere il rifiuto, ma una persona non può né vederlo né spegnerlo. Senza quella schermata `CRM_AI_VERO` resta spento.
+La schermata della segreteria che mostra e permette di togliere `non_contattare`, e che mostra stato, riassunto e conferma del promemoria, c'è (19/11/2026, nel CRM → Schede). Resta da fare, prima di aprire una sede vera, solo ciò che dipende da Luigi: applicare la migrazione, provare la schermata con dati veri **sulla sede Demo**, e il suo sì.
+
+Che cosa vede la segreteria:
+
+- **In cima alla scheda di una famiglia**, quando il rifiuto è acceso, un avviso «Non contattare» con la data («Dal …») e il comando «Togli “non contattare”». Prima di salvare chiede conferma: togliere vuol dire che l'assistente può tornare a scrivere a quella famiglia.
+- **Il riquadro «Assistente della vendita»**, sotto i dati della famiglia: a che punto è (lo `stato`, in parole di segreteria e non col codice), il riassunto della conversazione (sola lettura, a capo come scritto) e quando l'assistente l'ha aggiornato. Se l'assistente non ha scritto niente, una riga lo dice. Quando il rifiuto è spento il riquadro ha il comando «Segna “non contattare”», con la stessa conferma (la segreteria lo segna anche per chi lo chiede al telefono).
+- **Nelle visite della scheda**, se la famiglia ha confermato il promemoria dell'appuntamento, ha detto di no, o non ha ancora risposto (quest'ultima riga solo per un appuntamento ancora in programma).
+- **Nell'elenco delle famiglie**, su ogni riga, «Non contattare» e, sulla prossima visita, «Appuntamento confermato» o «Appuntamento non confermato» (la risposta nulla non ha segno).
+- **Nello storico**, i cambi dell'assistente (`ai_stato`, `ai_riassunto`, `non_contattare`) con un nome leggibile e il suo nome come autore, la conferma del promemoria (la nota con il testo fisso) e, per la segreteria, «Segnata come “non contattare”» o «“Non contattare” tolto».
+
+Come funziona dietro, per chi la tocca:
+
+- Si toglie o si rimette con `PATCH /api/admin/crm/schede/{id}` e il corpo `{ "nonContattare": true | false }`: stesso gate delle altre scritture del CRM (`requireCrm`, quindi segreteria e Direzione, il coordinatore no; `assertSchedaInScope`; ogni scrittura filtra per `id` e `scuola_id`). Acceso, `non_contattare_il` è l'istante di adesso (se già c'era resta il primo); spento, si azzera. Nello storico entra un evento `modificata` con `dati: { campi: "non_contattare", acceso: true|false }` e `autore_via: "segreteria"`: il solo nome del campo e un booleano, mai il riassunto né un testo.
+- L'elenco (`GET /api/admin/crm/schede`) porta in ogni riga `non_contattare` e `prossima_visita_confermata`; il dettaglio (`GET …/schede/{id}`) porta le colonne nuove con la `select('*')`.
+- **Prima della migrazione** le colonne non ci sono, e nessuna schermata esistente si rompe: l'elenco rilegge la pagina senza le due colonne nuove (`42703`) e lascia i segni spenti, il dettaglio si apre senza riquadro né avviso, lo spostamento di una visita dalla segreteria non prova a scrivere la conferma. In tutti questi casi un `warn` con `esito: "colonne-vendita-assenti"` finisce nel log. Il solo `PATCH` di `nonContattare` risponde `503 CRM_NON_INSTALLATO` (e non scrive nemmeno il resto del corpo).
 
 ## Ambiente vero
 
