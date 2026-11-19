@@ -76,6 +76,19 @@
     "non_presentato": "No-show",
     "annullato": "Cancelled"
   },
+  "statiAssistente": {
+    "nuova": "New, not contacted yet",
+    "contattata": "Contacted",
+    "in_conversazione": "In conversation",
+    "appuntamento": "Appointment booked",
+    "confermato": "Appointment confirmed",
+    "venuta": "Came to the appointment",
+    "non_venuta": "Did not come to the appointment",
+    "non_risponde": "Not replying",
+    "non_interessata": "Not interested",
+    "non_contattare": "Do not contact",
+    "a_una_persona": "Handed over to the office"
+  },
   "tipiAzione": {
     "follow_up_1": "First call after the visit",
     "riprova_1": "First retry",
