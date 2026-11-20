@@ -245,14 +245,37 @@ const TETTO_STABILITA_MS = 30_000;
 const TETTO_RETE_MS = 12_000;
 
 /**
+ * IL TETTO DELL'ATTESA DI PRESENZA — dal 2026-11-20, e la misura che l'ha chiesta.
+ *
+ * Da metà novembre 2026 la CI gira su macchine da 2 processori (repository privato; prima erano
+ * 4), e
+ * `/parent/pagamenti` (mobile) è diventata rossa a caso con «la pagina ha reso 10 nodi di testo
+ * (attesi ≥ 33): non è pulita, è VUOTA» — run 44565586745, tentativi 1 e 3 (10 e 11 nodi), mentre
+ * sulla stessa macchina `main` passava (run 44703367370, 44718868421). La pagina non era vuota:
+ * era stata misurata sul GUSCIO. Dai tempi del server (run 44718868421): quella schermata chiama
+ * in cascata otto API da 1,3-2,4 s l'una, e col processore in coda per metà del tempo fra una
+ * risposta e la richiesta successiva passa più di mezzo secondo. `networkidle` (500 ms senza
+ * richieste) scatta in quel buco, il ciclo legge due volte lo stesso numero a 500 ms di distanza
+ * — e «stabile» è il guscio. Le due attese hanno lo STESSO passo: su una macchina lenta cedono
+ * insieme.
+ *
+ * Quello che mancava è una PRESENZA: finché i nodi sono meno del pavimento della baseline
+ * (`nodiMinimi`), la pagina non ha ancora i suoi dati e non c'è niente da chiamare «stabile».
+ * Non è un'indulgenza: il pavimento è lo stesso che l'`expect` più sotto pretende, e una pagina
+ * davvero vuota resta sotto per tutto il tetto e fallisce con lo stesso messaggio di prima —
+ * trenta secondi dopo. In bootstrap (rotta senza baseline) il pavimento vale 1 e l'attesa non c'è.
+ */
+const TETTO_PRESENZA_MS = 30_000;
+
+/**
  * Il timeout del singolo test. Il default di Playwright è 30 s (nessun `timeout`
  * globale in `playwright.config.ts`): con DUE passate che possono arrivare
  * ciascuna al proprio tetto, il test morirebbe per timeout prima di poter dire
  * PERCHÉ — e «Test timeout of 30000ms exceeded» non nomina né la rotta né la
- * successione misurata. Due volte (quiete di rete + stabilità), più un minuto per
- * i due caricamenti.
+ * successione misurata. Due volte (quiete di rete + presenza + stabilità), più un
+ * minuto per i due caricamenti.
  */
-const TIMEOUT_TEST_MS = 2 * (TETTO_RETE_MS + TETTO_STABILITA_MS) + 60_000;
+const TIMEOUT_TEST_MS = 2 * (TETTO_RETE_MS + TETTO_PRESENZA_MS + TETTO_STABILITA_MS) + 60_000;
 
 /**
  * IL MARGINE DEL PAVIMENTO. `nodiMinimi` serve a distinguere «pagina pulita» da
@@ -336,8 +359,13 @@ async function armaAltoContrasto(context: BrowserContext, baseURL: string) {
  * baseline, preteso più sotto su entrambe le passate: se il numero dei saltati
  * sul gradiente crolla sotto il minimo, la misura è tornata al guscio — non si
  * aggiornano i numeri, si guarda perché la pagina non ha caricato.
+ *
+ * FRA 2 E 3, dal 2026-11-20, l'attesa di PRESENZA (`pavimento`, cioè il `nodiMinimi` della
+ * baseline): si comincia a campionare la stabilità solo quando la pagina ha almeno i nodi che
+ * l'`expect` pretenderà. Copre il caso che 2 e 3 lasciano scoperto insieme, misurato sulla CI a
+ * 2 processori: v. `TETTO_PRESENZA_MS`.
  */
-async function misura(page: Page, url: string): Promise<EsitoSonda> {
+async function misura(page: Page, url: string, pavimento: number): Promise<EsitoSonda> {
   const risposta = await page.goto(url, { waitUntil: 'load' });
   expect(risposta?.ok(), `la rotta ${url} non ha risposto 2xx`).toBe(true);
   await attendiFineCaricamento(page);
@@ -356,9 +384,26 @@ async function misura(page: Page, url: string): Promise<EsitoSonda> {
   }
 
   const successione: number[] = [];
-  const scadenza = Date.now() + TETTO_STABILITA_MS;
   let ultimo = await page.evaluate(sondaDom, { autotest: false });
   successione.push(ultimo.esaminati);
+
+  // La presenza: sotto il pavimento i dati non sono arrivati, e non si campiona un guscio.
+  const scadenzaPresenza = Date.now() + TETTO_PRESENZA_MS;
+  while (ultimo.esaminati < pavimento && Date.now() < scadenzaPresenza) {
+    await page.waitForTimeout(PASSO_STABILITA_MS);
+    ultimo = await page.evaluate(sondaDom, { autotest: false });
+    successione.push(ultimo.esaminati);
+  }
+  if (ultimo.esaminati < pavimento) {
+    // Non si lancia qui: l'`expect` sul pavimento, più sotto, è quello che fallisce — col suo
+    // messaggio, che nomina la modalità. Ma non si tace quanto si è aspettato.
+    console.log(
+      `⚠️ ${url}: dopo ${TETTO_PRESENZA_MS / 1000} s la pagina ha ancora ${ultimo.esaminati} nodi di testo ` +
+        `(pavimento ${pavimento}). Successione: ${successione.join(', poi ')}.`,
+    );
+  }
+
+  const scadenza = Date.now() + TETTO_STABILITA_MS;
 
   while (Date.now() < scadenza) {
     await page.waitForTimeout(PASSO_STABILITA_MS);
@@ -387,16 +432,18 @@ for (const { rotta, storage, viewport } of ROTTE) {
     test(`${rotta} — modalità normale e Alto Contrasto`, async ({ page, context, baseURL }) => {
       test.setTimeout(TIMEOUT_TEST_MS);
       const voce = vocePer(rotta);
+      // Il pavimento della baseline: è anche ciò che `misura` aspetta prima di campionare.
+      const minimi = voce?.nodiMinimi ?? 1;
 
       // ── passata 1: modalità normale ──────────────────────────────────────
-      const normale = await misura(page, rotta);
+      const normale = await misura(page, rotta, minimi);
       // ⚠️ In modalità normale l'attributo è ASSENTE, non "normal":
       // `layout.tsx` scrive `data-contrast={highContrast ? "high" : undefined}`.
       expect(await page.locator('html').getAttribute('data-contrast')).toBeNull();
 
       // ── passata 2: Alto Contrasto ────────────────────────────────────────
       await armaAltoContrasto(context, baseURL!);
-      const alto = await misura(page, rotta);
+      const alto = await misura(page, rotta, minimi);
 
       // Tre asserzioni di attivazione, non una: «una modalità mai vista attiva
       // non è testata». (1) l'SSR ha letto il cookie…
@@ -450,7 +497,6 @@ for (const { rotta, storage, viewport } of ROTTE) {
       const daIncollare = inBootstrap ? `\nVoce misurata in questa run, da incollare in ${path.basename(BASELINE)}:\n${JSON.stringify(misurato, null, 2)}` : '';
 
       // ── la sonda non è cieca ─────────────────────────────────────────────
-      const minimi = voce?.nodiMinimi ?? 1;
       expect(normale.esaminati, `modalità NORMALE, ${rotta}: la pagina ha reso ${normale.esaminati} nodi di testo (attesi ≥ ${minimi}): non è pulita, è VUOTA.${daIncollare}`).toBeGreaterThanOrEqual(minimi);
       // Lo stesso messaggio anche qui: fino al 2026-09-06 questa riga era muta, e
       // l'unico rosso che produceva diceva «expected 15 to be >= 18» senza dire

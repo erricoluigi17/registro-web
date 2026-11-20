@@ -1,5 +1,6 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Browser, type Page } from '@playwright/test';
 import { STORAGE, attendiFineCaricamento } from './fixtures';
+import { riscaldaRotte } from './helpers/riscaldamento';
 
 /**
  * IL TABLET — genitori e docenti su iPad (progetti `tablet-verticale` e `tablet-orizzontale` di
@@ -36,6 +37,10 @@ import { STORAGE, attendiFineCaricamento } from './fixtures';
  * tagliata nella barra in alto e nella navigazione (`verificaScritteIntere`).
  *
  * `retries: 0` nei due progetti: una misura sbagliata è la stessa anche al terzo tentativo.
+ *
+ * Dal 20/11/2026 ogni gruppo comincia con un RISCALDAMENTO (`riscalda`, qui sotto): con la CI a 2
+ * processori la prima visita di `/parent/mensa` costava 17 s di sola compilazione di `next dev`, e
+ * il `poll` delle colonne ne concede 15. Le prove e i loro tempi sono quelli di prima.
  */
 
 /**
@@ -347,8 +352,22 @@ async function verificaGuscioAdmin(page: Page, rotta: string) {
   });
 }
 
+/**
+ * Prima delle prove di un gruppo, una visita a vuoto delle sue rotte con la sessione del gruppo:
+ * `next dev` le compila lì, e non dentro i `timeout` delle misure. Non è un tentativo in più —
+ * non controlla niente, e la prova riapre la pagina da capo: la ragione e la misura stanno in
+ * `helpers/riscaldamento.ts`. Il tempo dell'hook è suo (a freddo, su 2 processori, sono minuti).
+ */
+function riscalda(storageState: string, rotte: readonly string[]) {
+  test.beforeAll(async ({ browser }: { browser: Browser }, testInfo) => {
+    testInfo.setTimeout(rotte.length * 90_000 + 30_000);
+    await riscaldaRotte(browser, { baseURL: testInfo.project.use.baseURL, storageState, rotte });
+  });
+}
+
 test.describe('genitore su iPad', () => {
   test.use({ storageState: STORAGE.genitore });
+  riscalda(STORAGE.genitore, ROTTE_GENITORE);
   for (const rotta of ROTTE_GENITORE) {
     test(`${rotta}: navigazione laterale, colonna larga, nessuno scorrimento di lato`, async ({ page }) => {
       await verificaGuscioTablet(page, rotta);
@@ -358,6 +377,7 @@ test.describe('genitore su iPad', () => {
 
 test.describe('docente su iPad', () => {
   test.use({ storageState: STORAGE.docente });
+  riscalda(STORAGE.docente, ROTTE_DOCENTE);
   for (const rotta of ROTTE_DOCENTE) {
     test(`${rotta}: navigazione laterale, colonna larga, nessuno scorrimento di lato`, async ({ page }) => {
       await verificaGuscioTablet(page, rotta);
@@ -367,6 +387,7 @@ test.describe('docente su iPad', () => {
 
 test.describe('segreteria su iPad', () => {
   test.use({ storageState: STORAGE.admin });
+  riscalda(STORAGE.admin, ROTTE_SEGRETERIA);
   for (const rotta of ROTTE_SEGRETERIA) {
     test(`${rotta}: binario in verticale, sidebar in orizzontale, nessuna scritta tagliata`, async ({ page }) => {
       await verificaGuscioAdmin(page, rotta);
@@ -406,6 +427,8 @@ test.describe('segreteria su iPad', () => {
 
 test.describe('il menu del binario', () => {
   test.use({ storageState: STORAGE.genitore });
+  // Il pannello porta a `/parent/mensa`: senza riscaldamento, lanciato da solo, la compilerebbe qui.
+  riscalda(STORAGE.genitore, ['/parent', '/parent/mensa']);
   test('«Menu» apre il pannello accanto al binario e porta alla voce scelta', async ({ page }) => {
     test.skip(page.viewportSize()!.width >= 1024, 'da 1024 px la sidebar mostra tutte le voci: non c’è un Menu da aprire');
     await page.goto('/parent');
