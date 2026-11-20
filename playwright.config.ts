@@ -273,6 +273,8 @@ export default defineConfig({
       url: BASE_URL,
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
+      // MISURA (ramo di prova): le righe «GET /rotta 200 in …ms (compile: …)» di next dev.
+      stdout: 'pipe',
     /**
      * Il logger si spegne da sé sotto vitest (guardia su `process.env.VITEST`, letta al
      * caricamento del modulo), ma Playwright NON è vitest: avvia un vero server Next, in un
