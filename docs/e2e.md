@@ -21,12 +21,38 @@ Prerequisiti una tantum:
   Perché sta fuori dal repo: il 2026-07-29 il provisioning di Kidville Aversa e Kidville
   Cesa ha collegato `admin.e2e@kidville.test` (ruolo `admin`) a due sedi **vere**, e quel
   letterale committato è stato per due giorni una credenziale di Direzione valida in
-  produzione, in un repository pubblico. Vedi `e2e/lib/e2e-password.mjs`.
+  produzione, in un repository allora pubblico (è privato da metà novembre 2026). Vedi
+  `e2e/lib/e2e-password.mjs`.
 - `npx playwright install chromium`.
 
 Architettura: `playwright.config.ts` avvia `next dev --port 3100` (`webServer`),
 il progetto `setup` fa login UI per i 3 ruoli e salva gli storageState in
 `e2e/.auth/*.json` (gitignorati); gli spec riusano quelle sessioni.
+
+## La macchina della CI (dal novembre 2026: 2 processori, 8 GB)
+
+Il repository è privato da metà novembre 2026, e `ubuntu-latest` per un repository privato ha
+**2 processori e 8 GB di RAM** (pubblico: 4 e 16). La suite gira su `next dev`, che compila ogni
+pagina e ogni rotta API alla prima richiesta e poi la tiene. Misurato il 20/11/2026 (run
+44718868421): processore in coda in media per il 41% del tempo, `next dev` fra 3 e 5,9 GB,
+memoria usata fino a 7,5 GB con 2,3 GB in scambio, suite in 41-50 minuti (erano 29-33).
+
+Tre cose ne discendono, e valgono per chi scrive uno spec nuovo:
+
+- **La prima visita di una rotta costa la sua compilazione**: fino a 14 s per una sola rotta API,
+  17 s per una pagina con la sua API. In un progetto a `retries: 0` quel tempo non deve stare
+  dentro un `timeout` che misura altro: si scalda prima (`e2e/helpers/riscaldamento.ts`, usato
+  da `tablet-layout.spec.ts` in un `beforeAll` per gruppo). Il riscaldamento visita e basta: non
+  controlla niente e non sostituisce nessuna prova.
+- **`networkidle` non prova che i dati siano arrivati.** Col processore saturo, fra una risposta
+  e la richiesta successiva della stessa pagina passa più di mezzo secondo, e la quiete scatta a
+  metà della cascata. Si aspetta una **presenza** (un testo, un numero di nodi, un attributo),
+  come fa `contrasto-schermate.spec.ts` col pavimento della baseline.
+- **La memoria è al limite.** Il job porta lo scambio a 6 GB prima della suite e stampa
+  `free`/`dmesg` alla fine (passo «Memoria a fine suite»): se un giro muore di colpo, lì c'è
+  scritto quanto margine restava nei giri prima.
+
+Un giro intero di CI (i due job) costa circa 137 minuti di quota.
 
 ## Cosa semina `scripts/seed-e2e.mjs`
 

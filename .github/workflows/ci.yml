@@ -4,11 +4,36 @@ name: CI
 # La branch protection su `main` richiede che i job `quality` ed `e2e`
 # siano verdi prima del merge: così Vercel deploya in produzione solo
 # codice che ha superato lint, typecheck, unit ed end-to-end.
+#
+# ⚠️ DA METÀ NOVEMBRE 2026 IL REPOSITORY È PRIVATO (lo è diventato fra il 15 e il 17/11), e tre
+# cose scritte in questo file sono cambiate:
+#
+#  1. LA MACCHINA. `ubuntu-latest` per un repository privato ha 2 processori e 8 GB di RAM; per
+#     uno pubblico ne aveva 4 e 16 (docs.github.com, «GitHub-hosted runners», letta il 20/11).
+#     Le macchine più grandi sono solo per le organizzazioni con piano Team o Enterprise.
+#     Misurato a parità di codice: `npm run gate` da 46 a 57-81 minuti, la suite E2E da 29-33 a
+#     41-50, e due prove a `retries: 0` rosse a caso (v. il job `e2e`).
+#  2. LA QUOTA. I minuti di un repository privato si pagano dalla quota mensile dell'account
+#     (0,006 $ al minuto su Linux a 2 processori). Misurato il 20/11 sulla run 44718868421: un
+#     giro intero sono 137 minuti (83 `quality` + 54 `e2e`), circa 0,82 $.
+#  3. LA BRANCH PROTECTION. Con il piano Free non esiste sui repository privati: il 20/11
+#     `GET /branches/main/protection` risponde 403 «Upgrade to GitHub Pro or make this repository
+#     public». Finché è così, la frase qui sopra descrive un'intenzione: niente impedisce il merge
+#     di una PR rossa, e il gate è chi fa il merge che guarda i due job.
 
 on:
   pull_request:
   push:
     branches: [main]
+    # SOLO sul push, non sulle PR. `supabase/.temp/cli-latest` è il promemoria della CLI di
+    # Supabase («l'ultima versione uscita è la v…»): è tracciato da maggio, non lo legge nessun
+    # test né nessuno script, e cambia da solo a ogni rilascio della CLI. I salvataggi automatici
+    # lo committano su `main` così com'è (5f6f89c6, 20/11), e ognuno faceva partire un giro
+    # intero: 137 minuti di quota per una riga che non entra nel prodotto.
+    # NON si allarga a `docs/**` o ai `.md`: 65 file di `__tests__` leggono documenti (lock,
+    # baseline, PRD), e ignorarli salterebbe prove vere.
+    paths-ignore:
+      - 'supabase/.temp/**'
 
 # Evita run duplicate sullo stesso ref (es. push su un branch con PR aperta).
 concurrency:
@@ -25,6 +50,9 @@ jobs:
   quality:
     name: Lint · Typecheck · Unit
     runs-on: ubuntu-latest
+    # Senza, un job bloccato gira fino al tetto di GitHub (6 ore) a spese della quota. Sulla
+    # macchina da 2 processori il job dura 62-90 minuti (run del 17, 19 e 20/11).
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -145,6 +173,10 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
+    # Il job dura 45-66 minuti (di cui fino a 23 a installare i browser quando i mirror di `apt`
+    # sono lenti). Il 20/11 il tentativo 2 della run 44565586745 ha perso il contatto dopo 65
+    # minuti: con un tetto, un giro così si ferma invece di consumare quota.
+    timeout-minutes: 90
     # Serializza le run che condividono il progetto Supabase CI:
     # il seed lavora sulle scuole dedicate e2e00000-* ed è idempotente,
     # ma due run simultanee sullo stesso DB potrebbero interferire.
@@ -158,15 +190,54 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CI_SUPABASE_SERVICE_ROLE_KEY }}
       # Password di TUTTI gli account `*.e2e@kidville.test` (8 dal 2026-07-31: il
       # seed semina due sedi — vedi `docs/e2e.md`). Fino al 2026-07-31 era un
-      # letterale in `scripts/seed-e2e.mjs`, e il repository è PUBBLICO: il 29/07
+      # letterale in `scripts/seed-e2e.mjs`, e il repository era PUBBLICO (lo è
+      # stato fino a metà novembre 2026): il 29/07
       # quell'account è finito in Direzione su Kidville Aversa e Kidville Cesa,
       # sedi vere. Ora sta solo qui. Il seed la RIMPOSTA a ogni run
       # (`auth.admin.updateUserById`): per ruotarla basta cambiare il secret.
       # Assente ⇒ il seed esce con exit 1 e il job è rosso: è voluto, un default
-      # renderebbe di nuovo pubbliche le credenziali.
+      # rimetterebbe le credenziali nel codice — e la storia di git le tiene per sempre.
       KV_E2E_PASSWORD: ${{ secrets.CI_E2E_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+      # ── PIÙ MEMORIA DI SCAMBIO, prima di tutto il resto ──────────────────────
+      #
+      # Misurato il 20/11/2026 sulla run 44718868421 (2 processori, 7.931 MB di RAM, 3 GB di
+      # scambio), campionando ogni 30 s durante la suite: il server `next dev` da solo oscilla
+      # fra 3 e 5,9 GB — `NODE_OPTIONS` qui sopra gli concede 6 GB di heap, scelti quando la
+      # macchina ne aveva 16 — e con i browser la memoria usata arriva a 7.508 MB, con 2.294 MB
+      # su 3.071 in scambio. Restava circa 1 GB prima dell'esaurimento. Quel giro è arrivato in
+      # fondo; due dei giorni prima no (44506784465: «The runner has received a shutdown signal»
+      # a metà suite; 44565586745 tentativo 2: «lost communication with the server»), ed è il
+      # modo in cui muore una macchina senza memoria. Non è provato che siano morti di questo:
+      # nei loro registri non c'è una riga sulla memoria. È la causa compatibile con la misura.
+      #
+      # PERCHÉ NON SI ABBASSA L'HEAP DI `next dev`. Sarebbe la mossa ovvia, e peggiora: sopra
+      # l'80% del tetto `next dev` si riavvia da solo («Server is approaching the used memory
+      # threshold, restarting…», `next/dist/server/lib/start-server.js`) e butta via tutte le
+      # rotte compilate — a metà suite, sulla macchina su cui ricompilarle costa di più.
+      #
+      # Lo scambio non rende la macchina più veloce: è la rete sotto il picco. Se qualcosa
+      # fallisce il passo AVVISA e prosegue con lo scambio che la macchina ha già: la suite deve
+      # poter girare comunque, e il passo «Memoria a fine suite» dice com'è andata.
+      - name: Memoria di scambio a 6 GB
+        run: |
+          set +e
+          echo "prima:"; free -m; sudo swapon --show
+          vecchi=$(sudo swapon --show=NAME --noheadings 2>/dev/null)
+          NUOVO=/swapfile-kidville
+          if sudo fallocate -l 6G "$NUOVO" && sudo chmod 600 "$NUOVO" && sudo mkswap "$NUOVO" >/dev/null && sudo swapon "$NUOVO"; then
+            # Il nuovo è già attivo: solo ora si toglie il vecchio, e il suo file torna disco libero.
+            for v in $vecchi; do
+              sudo swapoff "$v" && sudo rm -f "$v"
+            done
+            echo "::notice::memoria di scambio portata a 6 GB"
+          else
+            sudo rm -f "$NUOVO"
+            echo "::warning::non sono riuscito a creare 6 GB di scambio: la suite gira con quello della macchina"
+          fi
+          echo "dopo:"; free -m; sudo swapon --show; df -h / | tail -1
+          exit 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -184,6 +255,16 @@ jobs:
         run: npm run e2e:seed
       - name: Suite E2E
         run: npm run e2e
+      # Tre righe per sapere, a ogni giro, quanto margine restava: la misura del 20/11 è costata
+      # un giro apposta, e senza questo passo il prossimo «la macchina è morta» ne costerebbe un
+      # altro. `dmesg` dice se il kernel ha ucciso un processo per mancanza di memoria.
+      - name: Memoria a fine suite
+        if: always()
+        run: |
+          set +e
+          nproc; free -m; sudo swapon --show
+          sudo dmesg 2>/dev/null | grep -i -E 'out of memory|oom-kill|killed process' | tail -5
+          exit 0
       # ⚠️ LA PASSWORD FINIVA IN CHIARO DENTRO L'ARTEFATTO, E L'ARTEFATTO SI SCARICA.
       #
       # Misurato il 2026-08-04 sulla run 30911702345: `playwright-report/` conteneva
@@ -193,8 +274,12 @@ jobs:
       # `fill()` la scrive nel DOM. Nell'artefatto della run precedente non c'era: è
       # comparso appena un test ha cominciato a fallire sulla schermata di accesso.
       #
-      # Questo repository è PUBBLICO, e gli artefatti delle Actions di un repository
-      # pubblico sono scaricabili. Quella password apre otto account `*.e2e@kidville.test`
+      # Quando è stato scritto questo passo il repository era PUBBLICO, e gli artefatti delle
+      # Actions di un repository pubblico sono scaricabili da chiunque. Da metà novembre 2026 è privato
+      # e li scarica solo chi ha accesso al repository: la bonifica RESTA, perché un segreto che
+      # esce da un secret di GitHub e finisce in un file non deve dipendere dalla visibilità di
+      # oggi — che può cambiare con un clic, artefatti già caricati compresi.
+      # Quella password apre otto account `*.e2e@kidville.test`
       # su un progetto Supabase separato — non la produzione — ma è comunque un segreto
       # che esce da un secret di GitHub e finisce in un file scaricabile, ed è
       # esattamente il modo in cui il 29 luglio un account di prova si è ritrovato in
