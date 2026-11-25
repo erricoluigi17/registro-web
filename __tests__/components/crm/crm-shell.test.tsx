@@ -13,6 +13,7 @@ import {
   MOTIVI_PERDITA,
   ORIGINI,
   STATI_APPUNTAMENTO,
+  STATI_FAMIGLIA_AI,
   TIPI_AZIONE,
   TIPI_EVENTO,
 } from '@/lib/crm/tipi'
@@ -196,6 +197,7 @@ const GRUPPI: Record<string, readonly string[]> = {
   tipiAzione: TIPI_AZIONE,
   esitiAzione: ESITI_AZIONE,
   motiviIndisponibilita: MOTIVI_INDISPONIBILITA,
+  statiAssistente: STATI_FAMIGLIA_AI,
   tipiEvento: TIPI_EVENTO,
 }
 

@@ -146,6 +146,15 @@ describe('requireIntegrazioneAi', () => {
     expect(h.rateLimit).not.toHaveBeenCalled()
     expect(h.scritture).toEqual([])
   })
+  it('una chiave di una sede vera, interruttore spento: 403 SEDE_NON_AMMESSA', async () => {
+    accendiAi([SEDE_A])
+    vi.stubEnv('CRM_AI_SEDI_VERE', SEDE_A)
+    const g = await requireIntegrazioneAi(richiestaAi('/api/crm/ai/slot'), 'slot')
+    expect('response' in g && g.response.status).toBe(403)
+    expect('response' in g && (await corpo(g.response)).codice).toBe('SEDE_NON_AMMESSA')
+    expect(h.rateLimit).not.toHaveBeenCalled()
+    expect(h.scritture).toEqual([])
+  })
   it('con l’elenco delle sedi vuoto lascia una riga di livello error: è configurazione mancante', async () => {
     accendiAi([])
     await requireIntegrazioneAi(richiestaAi('/api/crm/ai/slot'), 'slot')

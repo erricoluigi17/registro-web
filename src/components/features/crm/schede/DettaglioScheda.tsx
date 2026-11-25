@@ -31,6 +31,7 @@ import { AssociaDomanda } from '../collegamento/AssociaDomanda'
 import { AvvisoDomandaDaAssociare } from '../collegamento/AvvisoDomandaDaAssociare'
 import { BadgeCollegamento } from '../collegamento/BadgeCollegamento'
 import { AzioniScheda } from '../follow-up/AzioniScheda'
+import { AvvisoNonContattare, RiquadroAssistente } from './AssistenteVendita'
 import { CollegaAlunno } from './CollegaAlunno'
 import { linkTelefono, linkWhatsApp } from './contatti-link'
 import { TONO_ESITO } from './filtri-schede'
@@ -189,7 +190,10 @@ function Contenuto({ dati, rileggi }: { dati: Dettaglio; rileggi: () => void }) 
   const { scheda, bambini, appuntamenti, eventi, eventi_totale: eventiTotale } = dati
   return (
     <div className="space-y-5">
+      {/* «Non contattare» acceso sta in cima a tutto: la segreteria deve vederlo prima di telefonare o scrivere. */}
+      <AvvisoNonContattare scheda={scheda} onCambiato={rileggi} />
       <Famiglia scheda={scheda} onSalvata={rileggi} />
+      <RiquadroAssistente scheda={scheda} onCambiato={rileggi} />
       {typeof scheda.domanda_da_associare === 'string' && <AvvisoDomandaDaAssociare scheda={scheda} onAggiornata={rileggi} />}
       <SezioneBambini scheda={scheda} bambini={bambini} rileggi={rileggi} />
       <Visite scuolaId={scheda.scuola_id} schedaId={scheda.id} appuntamenti={appuntamenti} rileggi={rileggi} />
@@ -747,6 +751,7 @@ function Visite({
                     {t('visiteSposta')}
                   </Btn>
                 )}
+                <RispostaAlPromemoria appuntamento={a} />
               </li>
             )
           })}
@@ -767,6 +772,30 @@ function Visite({
       )}
     </section>
   )
+}
+
+/**
+ * La risposta della famiglia al promemoria dell'appuntamento (`crm_appuntamenti.promemoria_conferma`, scritta
+ * dall'assistente della vendita): vero = conferma, falso = non conferma, nullo = non ha ancora risposto. Il «nessuna
+ * risposta» si dice solo per un appuntamento ancora in programma. Prima della migrazione la colonna non c'è
+ * (`undefined`) e la riga non dice niente.
+ */
+function RispostaAlPromemoria({ appuntamento: a }: { appuntamento: AppuntamentoDettaglio }) {
+  const t = useTranslations('crmSchede')
+  const date = useDateFormat()
+  const conferma = a.promemoria_conferma
+  if (conferma === true || conferma === false) {
+    return (
+      <span className="flex flex-wrap items-center gap-2">
+        <Badge tone={conferma ? 'success' : 'warn'}>{t(conferma ? 'appuntamentoConfermato' : 'appuntamentoNonConfermato')}</Badge>
+        {typeof a.promemoria_conferma_il === 'string' && (
+          <span className={TESTO_SECONDARIO}>{t('appuntamentoRispostaIl', { quando: date.dataOra(a.promemoria_conferma_il) })}</span>
+        )}
+      </span>
+    )
+  }
+  if (conferma === null && a.stato === 'in_programma') return <span className={TESTO_SECONDARIO}>{t('appuntamentoNessunaRisposta')}</span>
+  return null
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -893,6 +922,13 @@ function nomeCampo(t: Traduttore, colonna: string): string | null {
       return t('campoMotivoPerdita')
     case 'motivo_nota':
       return t('campoMotivoNota')
+    // I tre campi che scrive l'assistente della vendita (evento `modificata`, `autore_via` 'ai').
+    case 'ai_stato':
+      return t('campoAiStato')
+    case 'ai_riassunto':
+      return t('campoAiRiassunto')
+    case 'non_contattare':
+      return t('campoNonContattare')
     default:
       return null
   }
@@ -920,6 +956,10 @@ function dettaglioEvento(e: EventoDettaglio, nomiBambini: Map<string, string>, t
   if (e.tipo === 'quota_tolta') return t('eventoQuotaTolta', { nome })
   if (e.tipo === 'alunno_collegato') return t('eventoAlunnoCollegato', { nome })
   if (e.tipo === 'alunno_scollegato') return t('eventoAlunnoScollegato', { nome })
+  if (e.tipo === 'modificata' && dati.campi === 'non_contattare' && typeof dati.acceso === 'boolean') {
+    // La segreteria che accende o spegne «non contattare»: il booleano `acceso` dice in che verso (mai un testo).
+    return t(dati.acceso ? 'eventoNonContattareSegnato' : 'eventoNonContattareTolto')
+  }
   if (e.tipo === 'modificata' || e.tipo === 'bambino_modificato') {
     const campi = typeof dati.campi === 'string' ? dati.campi.split(',').map((c) => nomeCampo(t, c.trim())) : []
     const noti = campi.filter((c): c is string => c !== null)

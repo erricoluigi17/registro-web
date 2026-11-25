@@ -3,7 +3,7 @@ import type { OpzioneFiltro, Traduttore } from '@/lib/ui/filtri/tipi'
 /**
  * CRM della segreteria · le parole dei vocabolari, risolte nella lingua della pagina.
  *
- * Le etichette di esiti, origini, motivi, anni e tipi di evento stanno TUTTE in `crmShell`
+ * Le etichette di esiti, origini, motivi, anni, stati dell'assistente e tipi di evento stanno TUTTE in `crmShell`
  * (`messages/{it,en}/crmShell.json`, un gruppo per vocabolario): una parola, un posto. Le tre schermate
  * delle schede le leggono da qui invece di riscriverle — «Perso» nel filtro e «Perso» nel badge sono
  * la stessa chiave, e non possono divergere.
@@ -15,7 +15,7 @@ import type { OpzioneFiltro, Traduttore } from '@/lib/ui/filtri/tipi'
  * qui dentro conosce `useTranslations`.
  */
 
-export type GruppoVocabolario = 'esiti' | 'origini' | 'motiviPerdita' | 'anniIngresso' | 'statiAppuntamento' | 'tipiEvento'
+export type GruppoVocabolario = 'esiti' | 'origini' | 'motiviPerdita' | 'anniIngresso' | 'statiAppuntamento' | 'statiAssistente' | 'tipiEvento'
 
 /** L'etichetta di UN valore. `tc` è `useTranslations('crmShell')`. */
 export function etichetta(tc: Traduttore, gruppo: GruppoVocabolario, valore: string): string {

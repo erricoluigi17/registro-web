@@ -67,6 +67,10 @@ interface Riga {
   bambini: BambinoRiga[]
   prossima_visita: string | null
   prossima_azione: string | null
+  /** Dal 15/11/2026: la famiglia ha chiesto di non essere contattata. Prima della migrazione la route dice sempre `false`. */
+  non_contattare?: boolean
+  /** La risposta al promemoria della prossima visita: vero conferma, falso non conferma, nullo nessuna risposta (o niente colonna). */
+  prossima_visita_confermata?: boolean | null
 }
 
 /** Una pagina dell'elenco. `null` = la lettura è fallita (il guasto è già nel log del browser). */
@@ -297,7 +301,10 @@ function RigaFamiglia({ riga, onApri }: { riga: Riga; onApri: (schedaId: string)
 
   return (
     <button type="button" onClick={() => onApri(riga.id)} className={`${RIQUADRO} block w-full text-left transition-colors hover:border-kidville-green`}>
-      <span className="block font-barlow text-base font-extrabold uppercase text-kidville-ink">{riga.genitore_nome ?? t('rigaSenzaNome')}</span>
+      <span className="flex flex-wrap items-center gap-2">
+        <span className="font-barlow text-base font-extrabold uppercase text-kidville-ink">{riga.genitore_nome ?? t('rigaSenzaNome')}</span>
+        {riga.non_contattare === true && <Badge tone="error">{t('rigaNonContattare')}</Badge>}
+      </span>
 
       <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
         {riga.bambini.length === 0 && <span className={TESTO_SECONDARIO}>{t('nessunBambino')}</span>}
@@ -315,6 +322,13 @@ function RigaFamiglia({ riga, onApri }: { riga: Riga; onApri: (schedaId: string)
         <span className={TESTO_SECONDARIO}>
           {riga.prossima_visita !== null ? t('rigaProssimaVisita', { quando: date.dataOra(riga.prossima_visita) }) : t('rigaNessunaVisita')}
         </span>
+        {riga.prossima_visita !== null && typeof riga.prossima_visita_confermata === 'boolean' && (
+          <span>
+            <Badge tone={riga.prossima_visita_confermata ? 'success' : 'warn'}>
+              {t(riga.prossima_visita_confermata ? 'rigaConfermata' : 'rigaNonConfermata')}
+            </Badge>
+          </span>
+        )}
         <span className={TESTO_SECONDARIO}>
           {riga.prossima_azione !== null ? t('rigaProssimoRichiamo', { quando: date.dataOra(riga.prossima_azione) }) : t('rigaNessunRichiamo')}
         </span>

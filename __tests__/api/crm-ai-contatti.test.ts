@@ -71,19 +71,27 @@ const CREATA = '2026-11-15T10:00:00.000Z'
 const CREATA_DOPO = '2026-11-15T11:00:00.000Z'
 const INIZIO = '2026-11-18T08:00:00.000Z'
 const DOPO = '2026-11-15T00:00:00.000Z'
-const SCONOSCIUTA = { esiste: false, schedaId: null, creatoVia: null, visita: null, bambini: [] }
+const SCONOSCIUTA = { esiste: false, schedaId: null, creatoVia: null, stato: null, nonContattare: false, visita: null, bambini: [] }
+const FINE = '2026-11-18T08:45:00.000Z'
+const RIASSUNTO = 'Riassunto riservato della conversazione'
+const ALTRA_CHIAVE = '80000000-0000-4000-8000-0000000000aa'
+/** La visita attesa nella risposta: fissata dalla segreteria, quindi non modificabile. */
+const VISITA_SEGRETERIA = {
+  id: V1, inizio: INIZIO, fine: FINE, stato: 'in_programma', fissataVia: 'segreteria', modificabile: false, confermata: null,
+}
 
 const scheda = (campi: Riga = {}): Riga => ({
   id: S1, scuola_id: SEDE_A, genitore_nome: NOME_GENITORE, telefono1: TEL, telefoni_norm: [TEL_NORM],
   email_norm: [EMAIL], origine: 'telefonata', creato_via: 'segreteria', creata_il: CREATA,
-  anonimizzata_il: null, routine: NOTA, ...campi,
+  anonimizzata_il: null, routine: NOTA, ai_stato: null, ai_riassunto: RIASSUNTO, non_contattare: false, ...campi,
 })
 const bambino = (campi: Riga = {}): Riga => ({
-  id: B1, scuola_id: SEDE_A, scheda_id: S1, nome: NOME_BIMBO, data_nascita: NASCITA, creata_il: CREATA, ...campi,
+  id: B1, scuola_id: SEDE_A, scheda_id: S1, nome: NOME_BIMBO, data_nascita: NASCITA, esito: 'in_valutazione', creata_il: CREATA, ...campi,
 })
 const visita = (campi: Riga = {}): Riga => ({
   id: V1, scuola_id: SEDE_A, scheda_id: S1, inizio: INIZIO,
-  fine: '2026-11-18T08:45:00.000Z', stato: 'in_programma', nota: NOTA, ...campi,
+  fine: FINE, stato: 'in_programma', nota: NOTA, fissato_via: 'segreteria', integrazione_id: null,
+  promemoria_conferma: null, ...campi,
 })
 
 const registra = (campi: Riga = {}, token?: string | null) =>
@@ -117,25 +125,32 @@ afterEach(() => {
 })
 
 describe('visitaDi', () => {
-  const v = (id: string, inizio: string, fine: string, stato: AppuntamentoRow['stato']) => ({ id, inizio, fine, stato })
+  const v = (id: string, inizio: string, fine: string, stato: AppuntamentoRow['stato']) => ({
+    id, inizio, fine, stato, fissato_via: 'segreteria' as const, integrazione_id: null, promemoria_conferma: null,
+  })
+  const attesa = (x: ReturnType<typeof v>) => ({
+    id: x.id, inizio: x.inizio, fine: x.fine, stato: x.stato, fissataVia: 'segreteria', modificabile: false, confermata: null,
+  })
 
   it('preferisce la prima visita ancora in corso o futura, anche davanti a una svolta', () => {
     const corrente = v('a', '2026-11-16T06:30:00Z', '2026-11-16T07:15:00Z', 'in_programma')
     const futura = v('b', INIZIO, '2026-11-18T08:45:00.000Z', 'in_programma')
     const svolta = v('c', '2026-11-16T06:50:00Z', '2026-11-16T07:10:00Z', 'svolto')
-    expect(visitaDi([futura, svolta, corrente], ADESSO)).toEqual({
-      id: corrente.id, inizio: corrente.inizio, stato: corrente.stato,
-    })
+    expect(visitaDi([futura, svolta, corrente], ADESSO, INTEGRAZIONE_A)).toEqual(attesa(corrente))
+  })
+
+  it('modificabile è falso per una visita dell’AI in programma ma già finita', () => {
+    const mia = { id: 'a', inizio: '2026-11-16T06:30:00Z', stato: 'in_programma' as const, fissato_via: 'ai' as const, integrazione_id: INTEGRAZIONE_A, promemoria_conferma: null }
+    expect(visitaDi([{ ...mia, fine: '2026-11-16T07:15:00Z' }], ADESSO, INTEGRAZIONE_A)?.modificabile).toBe(true)
+    expect(visitaDi([{ ...mia, fine: ADESSO.toISOString() }], ADESSO, INTEGRAZIONE_A)?.modificabile).toBe(false)
   })
 
   it('dà l’ultima visita passata e ignora le annullate', () => {
     const finita = v('a', '2026-11-16T06:30:00Z', ADESSO.toISOString(), 'in_programma')
     const assente = v('b', '2026-11-15T06:30:00Z', '2026-11-15T07:00:00Z', 'non_presentato')
     const annullata = v('c', INIZIO, '2026-11-18T08:45:00.000Z', 'annullato')
-    expect(visitaDi([finita, annullata, assente], ADESSO)).toEqual({
-      id: finita.id, inizio: finita.inizio, stato: finita.stato,
-    })
-    expect(visitaDi([annullata], ADESSO)).toBeNull()
+    expect(visitaDi([finita, annullata, assente], ADESSO, INTEGRAZIONE_A)).toEqual(attesa(finita))
+    expect(visitaDi([annullata], ADESSO, INTEGRAZIONE_A)).toBeNull()
   })
 })
 
@@ -213,7 +228,7 @@ describe('E1 · registra contatto', () => {
     h.db.crm_appuntamenti.push(visita())
     const r = await registra()
     expect(r.status).toBe(200)
-    expect(await r.json()).toEqual({ schedaId: S1, creata: false, visita: { id: V1, inizio: INIZIO, stato: 'in_programma' } })
+    expect(await r.json()).toEqual({ schedaId: S1, creata: false, visita: VISITA_SEGRETERIA })
     expect(h.logEvento).toHaveBeenCalledWith('crm', 'info', expect.objectContaining({
       esito: 'ai-contatto-gia-presente', scuola_id: SEDE_A, entita_id: S1,
     }))
@@ -318,14 +333,56 @@ describe('E2 · stato contatto', () => {
     nessunNomeIn(j, [NOME_BIMBO, NOME_GENITORE, NASCITA, TEL, TEL_NORM, NOTA, EMAIL])
     expect(j).toEqual({
       esiste: true, schedaId: S1, creatoVia: 'segreteria',
-      visita: { id: V1, inizio: INIZIO, stato: 'in_programma' },
-      bambini: [{ id: B1, nascita: '2022-09' }, { id: B2, nascita: null }],
+      stato: null, nonContattare: false,
+      visita: VISITA_SEGRETERIA,
+      bambini: [{ id: B1, nascita: '2022-09', esito: 'in_valutazione' }, { id: B2, nascita: null, esito: 'in_valutazione' }],
     })
     expect(h.proiezioni.find(({ tabella }) => tabella === 'crm_bambini')?.colonne.split(/,\s*/)).toEqual([
-      'id', 'scheda_id', 'data_nascita', 'creata_il',
+      'id', 'scheda_id', 'data_nascita', 'esito', 'creata_il',
     ])
     expect(h.scritture.map(({ tabella }) => tabella)).toEqual(['crm_integrazioni'])
     expect(h.rpc).not.toHaveBeenCalled()
+  })
+
+  it('visita fissata a mano dalla segreteria: compare, fissataVia segreteria, modificabile false', async () => {
+    h.db.crm_schede.push(scheda())
+    h.db.crm_appuntamenti.push(visita({ integrazione_id: INTEGRAZIONE_A }))
+    expect((await (await stato()).json()).visita).toEqual(VISITA_SEGRETERIA)
+  })
+
+  it('visita fissata da questa chiave: modificabile true, con la conferma del promemoria', async () => {
+    h.db.crm_schede.push(scheda())
+    h.db.crm_appuntamenti.push(visita({ fissato_via: 'ai', integrazione_id: INTEGRAZIONE_A, promemoria_conferma: true }))
+    expect((await (await stato()).json()).visita).toEqual({
+      ...VISITA_SEGRETERIA, fissataVia: 'ai', modificabile: true, confermata: true,
+    })
+  })
+
+  it('visita fissata da un’altra chiave, o già svolta: non modificabile', async () => {
+    h.db.crm_schede.push(scheda())
+    h.db.crm_appuntamenti.push(visita({ fissato_via: 'ai', integrazione_id: ALTRA_CHIAVE }))
+    expect((await (await stato()).json()).visita).toMatchObject({ fissataVia: 'ai', modificabile: false })
+    h.db.crm_appuntamenti = [visita({ fissato_via: 'ai', integrazione_id: INTEGRAZIONE_A, stato: 'svolto' })]
+    expect((await (await stato()).json()).visita).toMatchObject({ stato: 'svolto', modificabile: false })
+  })
+
+  it('stato e nonContattare dalla scheda', async () => {
+    h.db.crm_schede.push(scheda({ ai_stato: 'non_contattare', non_contattare: true }))
+    expect(await (await stato()).json()).toMatchObject({ stato: 'non_contattare', nonContattare: true })
+  })
+
+  it('scheda senza stato: stato null, nonContattare false', async () => {
+    h.db.crm_schede.push(scheda())
+    expect(await (await stato()).json()).toMatchObject({ stato: null, nonContattare: false })
+  })
+
+  it('nessun nome, nota o riassunto nella risposta', async () => {
+    h.db.crm_schede.push(scheda({ ai_stato: 'contattata' }))
+    h.db.crm_bambini.push(bambino())
+    h.db.crm_appuntamenti.push(visita())
+    nessunNomeIn(await (await stato()).json(), [NOME_BIMBO, NOME_GENITORE, NOTA, RIASSUNTO, EMAIL, NASCITA, TEL])
+    const colonne = h.proiezioni.filter(({ tabella }) => tabella === 'crm_schede').map(({ colonne }) => colonne).join(',')
+    expect(colonne).not.toMatch(/ai_riassunto|genitore_nome|routine/)
   })
 
   it('ignora dettagli di un’altra sede anche se riferiti allo stesso id di scheda', async () => {
@@ -333,7 +390,7 @@ describe('E2 · stato contatto', () => {
     h.db.crm_bambini.push(bambino({ scuola_id: SEDE_B }))
     h.db.crm_appuntamenti.push(visita({ scuola_id: SEDE_B }))
     expect(await (await stato()).json()).toEqual({
-      esiste: true, schedaId: S1, creatoVia: 'segreteria', visita: null, bambini: [],
+      esiste: true, schedaId: S1, creatoVia: 'segreteria', stato: null, nonContattare: false, visita: null, bambini: [],
     })
   })
 
@@ -354,6 +411,16 @@ describe('E2 · stato contatto', () => {
     expect(rifiutata.status).toBe(400)
     nessunNomeIn(await rifiutata.json(), [NOME_BIMBO, NOTA])
     expect(h.lette).not.toContain('crm_schede')
+  })
+
+  it('una colonna della migrazione mancante nei dettagli (42703) risponde 503 senza testo grezzo', async () => {
+    h.db.crm_schede.push(scheda())
+    h.errori.crm_appuntamenti = { code: '42703', message: NOME_BIMBO, details: NASCITA, hint: NOTA }
+    const r = await stato()
+    expect(r.status).toBe(503)
+    const j = await r.json()
+    expect(j).toMatchObject({ codice: 'CRM_NON_INSTALLATO' })
+    nessunNomeIn([j, h.logErrore.mock.calls, h.logEvento.mock.calls], [NOME_BIMBO, NASCITA, NOTA])
   })
 
   it('un errore nei dettagli restituisce solo il codice tecnico al logger e nessuna scheda parziale', async () => {
@@ -387,7 +454,7 @@ describe('E3 · nuovi contatti', () => {
     nessunNomeIn(j, [NOME_BIMBO, NOME_GENITORE, NASCITA, TEL, NOTA, EMAIL, '3330000002'])
     expect(j).toEqual({
       contatti: [
-        { schedaId: S1, creataIl: CREATA, telefono: TEL_NORM, origine: 'telefonata', visita: { id: V1, inizio: INIZIO, stato: 'in_programma' }, bambini: [{ id: B1, nascita: '2022-09' }] },
+        { schedaId: S1, creataIl: CREATA, telefono: TEL_NORM, origine: 'telefonata', visita: VISITA_SEGRETERIA, bambini: [{ id: B1, nascita: '2022-09', esito: 'in_valutazione' }] },
         { schedaId: S2, creataIl: CREATA_DOPO, telefono: null, origine: 'altro', visita: null, bambini: [] },
       ],
       prossimoDopo: CREATA_DOPO,
@@ -449,6 +516,16 @@ describe('E3 · nuovi contatti', () => {
     expect(r.status).toBe(500)
     expect(await r.json()).toMatchObject({ codice: 'CRM_OPERAZIONE_NON_RIUSCITA' })
     expect(h.logErrore).toHaveBeenCalledWith(expect.objectContaining({ operazione: 'crm/ai/contatti/nuovi' }), { code: '42501' })
+  })
+
+  it('una colonna della migrazione mancante nei dettagli (42703) risponde 503 senza testo grezzo', async () => {
+    h.db.crm_schede.push(scheda())
+    h.errori.crm_appuntamenti = { code: '42703', message: NOME_GENITORE, details: TEL, hint: NOTA }
+    const r = await nuovi()
+    expect(r.status).toBe(503)
+    const j = await r.json()
+    expect(j).toMatchObject({ codice: 'CRM_NON_INSTALLATO' })
+    nessunNomeIn([j, h.logErrore.mock.calls, h.logEvento.mock.calls], [NOME_GENITORE, TEL, NOTA])
   })
 
   it.each([

@@ -76,6 +76,19 @@
     "non_presentato": "Non presentato",
     "annullato": "Annullato"
   },
+  "statiAssistente": {
+    "nuova": "Nuova, non ancora contattata",
+    "contattata": "Contattata",
+    "in_conversazione": "In conversazione",
+    "appuntamento": "Appuntamento fissato",
+    "confermato": "Appuntamento confermato",
+    "venuta": "È venuta all’appuntamento",
+    "non_venuta": "Non è venuta all’appuntamento",
+    "non_risponde": "Non risponde",
+    "non_interessata": "Non interessata",
+    "non_contattare": "Da non contattare",
+    "a_una_persona": "Passata alla segreteria"
+  },
   "tipiAzione": {
     "follow_up_1": "Primo richiamo dopo la visita",
     "riprova_1": "Primo nuovo tentativo",

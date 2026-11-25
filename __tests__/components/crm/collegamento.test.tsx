@@ -110,6 +110,11 @@ const scheda = (extra: Partial<SchedaRow> = {}): SchedaRow => ({
   creata_il: '2026-10-01T08:00:00.000Z',
   aggiornata_il: '2026-10-01T08:00:00.000Z',
   anonimizzata_il: null,
+  ai_stato: null,
+  ai_riassunto: null,
+  ai_aggiornata_il: null,
+  non_contattare: false,
+  non_contattare_il: null,
   ...extra,
 })
 

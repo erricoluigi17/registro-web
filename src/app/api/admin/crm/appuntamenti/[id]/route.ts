@@ -59,7 +59,7 @@ const statoNonAmmesso = () =>
   )
 
 /** Le sole colonne che cambiano alla chiusura di una visita (le altre restano com'erano). */
-type Chiusura = Partial<Pick<AppuntamentoRow, 'stato' | 'svolto_da' | 'segnato_da' | 'segnato_il' | 'inizio' | 'fine' | 'durata_min' | 'assegnata_a'>>
+type Chiusura = Partial<Pick<AppuntamentoRow, 'stato' | 'svolto_da' | 'segnato_da' | 'segnato_il' | 'inizio' | 'fine' | 'durata_min' | 'assegnata_a' | 'promemoria_conferma' | 'promemoria_conferma_il'>>
 
 /**
  * Scrive il cambio di stato SOLO se la visita è ancora `in_programma` e della sede giusta. `true` se la
@@ -138,7 +138,13 @@ export const PATCH = withRoute(
         const esito = await aggiornaSeInProgramma(supabase, {
           id,
           scuolaId,
-          campi: { inizio, fine, durata_min: durata, assegnata_a: assegnataA },
+          // Con un nuovo orario la conferma data per il vecchio non vale più: va richiesta di nuovo. Se la visita letta
+          // non ha la colonna (la migrazione della vendita del 15/11/2026 non è ancora applicata) non c'è niente da
+          // azzerare: scriverla darebbe un errore su uno spostamento che invece deve riuscire.
+          campi: {
+            inizio, fine, durata_min: durata, assegnata_a: assegnataA,
+            ...(cambiaOrario && 'promemoria_conferma' in visita && { promemoria_conferma: null, promemoria_conferma_il: null }),
+          },
           operazione,
         })
         if (esito instanceof NextResponse) return esito

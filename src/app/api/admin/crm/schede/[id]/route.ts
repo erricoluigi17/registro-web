@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/server-client'
 import { assertSchedaInScope, requireCrm } from '@/lib/crm/accesso'
 import { contattiNormalizzati } from '@/lib/crm/contatti'
-import { rispostaErroreDb } from '@/lib/crm/errori'
+import { rispostaCrmNonInstallato, rispostaErroreDb, rispostaErroreDbSchema } from '@/lib/crm/errori'
 import { registraEvento } from '@/lib/crm/eventi'
 import { ORIGINI, type Origine } from '@/lib/crm/tipi'
 import { aBlocchi, ID_PER_QUERY } from '@/lib/db/blocchi'
@@ -19,7 +19,15 @@ import { parseBody, parseData } from '@/lib/validation/http'
  *    appuntamenti, azioni_aperte, eventi, eventi_totale }`. Ogni bambino è la sua riga di `crm_bambini`
  *    (`select('*')`: le colonne della quota e `alunno_id` ci sono tutte), più — solo per un BONIFICO già
  *    passato in contabilità — `quota_pagamento_stato`, lo `stato` della voce «Iscrizione» (vedi sotto);
- *  · `PATCH /api/admin/crm/schede/[id]` — contatti, genitore, origine e le tre domande.
+ *  · `PATCH /api/admin/crm/schede/[id]` — contatti, genitore, origine, le tre domande e «non contattare»
+ *    (`nonContattare`, vero o falso: la segreteria lo toglie e lo rimette, l'assistente della vendita può solo
+ *    accenderlo).
+ *
+ * ── Le colonne della vendita (migrazione del 15/11/2026) ────────────────────────────────────────
+ * `ai_stato`, `ai_riassunto`, `ai_aggiornata_il`, `non_contattare` e `non_contattare_il` arrivano alla scheda
+ * con la `select('*')`: finché la migrazione non è applicata la scheda si legge e si salva come sempre, senza
+ * quelle chiavi (un `warn` lo dice nel log), e il solo «non contattare» risponde 503 `CRM_NON_INSTALLATO`.
+ * Il riassunto è testo scritto da una famiglia: sta nella risposta e basta, mai nel log né nello storico.
  *
  * La sede NON si chiede al client: la dice la scheda stessa, e `assertSchedaInScope` verifica che sia una
  * sede dell'utente (403 se no, 404 se la scheda non c'è). Da lì in poi ogni lettura e ogni scrittura porta
@@ -61,6 +69,7 @@ const patchBodySchema = z
     routine: zTesto(2000),
     paura: zTesto(2000),
     desiderio: zTesto(2000),
+    nonContattare: z.boolean().optional(),
   })
   .refine((b) => Object.values(b).some((v) => v !== undefined), { message: 'Nessun campo da modificare' })
 
@@ -133,6 +142,12 @@ export const GET = withRoute('admin/crm/schede/[id]:GET', async (request: NextRe
   // Esisteva un attimo fa (lo ha detto `assertSchedaInScope`): se ora non c'è, è stata tolta nel frattempo.
   if (!scheda.data) {
     return NextResponse.json({ error: 'Scheda non trovata.', codice: 'SCHEDA_NON_TROVATA' }, { status: 404 })
+  }
+
+  // Prima della migrazione della vendita la scheda non ha le colonne nuove: la schermata non mostra il riquadro
+  // dell'assistente e il caso resta nel log, senza far fallire la lettura.
+  if (!('non_contattare' in scheda.data)) {
+    logEvento('crm', 'warn', { operazione: OPERAZIONE_GET, esito: 'colonne-vendita-assenti', entita_id: id, scuola_id: scuolaId })
   }
 
   const righeAppuntamenti = appuntamenti.data ?? []
@@ -224,8 +239,16 @@ export const PATCH = withRoute('admin/crm/schede/[id]:PATCH', async (request: Ne
   if (erroreLettura) return rispostaErroreDb(erroreLettura, OPERAZIONE_PATCH)
   if (!corrente) return NextResponse.json({ error: 'Scheda non trovata.', codice: 'SCHEDA_NON_TROVATA' }, { status: 404 })
 
+  // «Non contattare» non è un testo: si tratta a parte. Senza le colonne della vendita (migrazione non ancora
+  // applicata) non si scrive niente, nemmeno il resto del corpo: la richiesta dice 503 e la segreteria riprova.
+  const nonContattare = body.data.nonContattare
+  if (nonContattare !== undefined && !('non_contattare' in corrente)) {
+    logEvento('crm', 'warn', { operazione: OPERAZIONE_PATCH, esito: 'colonne-vendita-assenti', entita_id: id, scuola_id: scuolaId })
+    return rispostaCrmNonInstallato()
+  }
+
   // Solo ciò che cambia DAVVERO: un salvataggio che non cambia niente non scrive e non lascia storia.
-  const patch: Record<string, string | string[] | null> = {}
+  const patch: Record<string, string | string[] | boolean | null> = {}
   const cambiati: string[] = []
   for (const [campo, colonna] of COLONNE) {
     const nuovo = body.data[campo]
@@ -234,7 +257,8 @@ export const PATCH = withRoute('admin/crm/schede/[id]:PATCH', async (request: Ne
     patch[colonna] = nuovo
     cambiati.push(colonna)
   }
-  if (cambiati.length === 0) return NextResponse.json({ id, modificata: false })
+  const cambiaNonContattare = nonContattare !== undefined && nonContattare !== (corrente.non_contattare === true)
+  if (cambiati.length === 0 && !cambiaNonContattare) return NextResponse.json({ id, modificata: false })
 
   if (cambiati.some((c) => COLONNE_CONTATTO.has(c))) {
     const dopo = (colonna: 'telefono1' | 'telefono2' | 'email1' | 'email2') =>
@@ -253,26 +277,60 @@ export const PATCH = withRoute('admin/crm/schede/[id]:PATCH', async (request: Ne
     patch.email_norm = norm.email_norm
   }
 
+  const adesso = new Date().toISOString()
+  if (cambiaNonContattare) {
+    patch.non_contattare = nonContattare === true
+    // Acceso: l'istante è quello in cui la segreteria lo segna (se un'altra mano l'aveva già acceso resta il primo).
+    // Spento: l'istante si azzera, perché non c'è più un rifiuto di cui dire da quando.
+    patch.non_contattare_il = nonContattare === true ? ((corrente.non_contattare_il as string | null) ?? adesso) : null
+  }
+
   const { data: scritte, error: erroreScrittura } = await supabase
     .from('crm_schede')
-    .update({ ...patch, aggiornata_il: new Date().toISOString() })
+    .update({ ...patch, aggiornata_il: adesso })
     .eq('id', id)
     .eq('scuola_id', scuolaId)
     .select('id')
-  if (erroreScrittura) return rispostaErroreDb(erroreScrittura as ErroreDb, OPERAZIONE_PATCH)
+  if (erroreScrittura) {
+    // La colonna che manca (migrazione non ancora applicata) è «non installato», non un guasto.
+    return cambiaNonContattare
+      ? rispostaErroreDbSchema(erroreScrittura as ErroreDb, OPERAZIONE_PATCH)
+      : rispostaErroreDb(erroreScrittura as ErroreDb, OPERAZIONE_PATCH)
+  }
   if (!scritte || scritte.length === 0) {
     return NextResponse.json({ error: 'Scheda non trovata.', codice: 'SCHEDA_NON_TROVATA' }, { status: 404 })
   }
 
   // Nello storico i soli NOMI dei campi: i valori sono recapiti e parole di famiglie.
-  await registraEvento(supabase, {
-    schedaId: id,
-    scuolaId,
-    tipo: 'modificata',
-    autore: auth.user.id,
-    autoreVia: 'segreteria',
-    dati: { campi: cambiati.join(',') },
-  })
+  if (cambiati.length > 0) {
+    await registraEvento(supabase, {
+      schedaId: id,
+      scuolaId,
+      tipo: 'modificata',
+      autore: auth.user.id,
+      autoreVia: 'segreteria',
+      dati: { campi: cambiati.join(',') },
+    })
+  }
+  // «Non contattare» ha il suo evento, nello stesso formato di quello dell'assistente (`tipo 'modificata'`, `dati.campi`):
+  // in più un booleano che dice se è stato acceso o spento, mai un testo. Nessun tipo nuovo: il vincolo del database
+  // non lo ammetterebbe senza un'altra migrazione.
+  if (cambiaNonContattare) {
+    await registraEvento(supabase, {
+      schedaId: id,
+      scuolaId,
+      tipo: 'modificata',
+      autore: auth.user.id,
+      autoreVia: 'segreteria',
+      dati: { campi: 'non_contattare', acceso: nonContattare === true },
+    })
+    logEvento('crm', 'info', {
+      operazione: OPERAZIONE_PATCH,
+      esito: nonContattare === true ? 'non-contattare-acceso' : 'non-contattare-tolto',
+      entita_id: id,
+      scuola_id: scuolaId,
+    })
+  }
 
   return NextResponse.json({ id, modificata: true })
 })
