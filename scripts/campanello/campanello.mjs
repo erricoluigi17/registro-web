@@ -20,6 +20,10 @@
 //                  (un battito ogni quarto d'ora, e subito se il vivo non risponde); il `cron` resta
 //                  come rinforzo, e serve proprio ad accorgersi che il Worker si è fermato.
 //
+//   5. IL REPOSITORY  se è diventato privato (`valutaRepository`): su GitHub Free vuol dire 2.000 minuti
+//                  di Actions al mese, macchine da 2 core e `main` senza protezione. Il 25/11/2026 i
+//                  minuti sono finiti e backup, CI e campanello si sono fermati, otto giorni dopo il cambio.
+//
 // Il giro NON fallisce quando trova un incidente: l'allarme è la segnalazione + l'email. Fallisce solo
 // se l'allarme non riesce a partire (email rifiutata o impossibile), perché un campanello che non sa
 // suonare deve dirlo ad alta voce — e «workflow fallito» è un'email che arriva da GitHub per conto suo.
@@ -27,7 +31,7 @@
 import { pathToFileURL } from 'node:url'
 import { allarma, creaGitHub } from './allarme.mjs'
 import { leggi, leggiConTentativi } from './lettura.mjs'
-import { eGiroBackupAutomatico, riconcilia, valutaBackup, valutaMonitorEsterno, valutaSalute, valutaVivo } from './valuta.mjs'
+import { eGiroBackupAutomatico, riconcilia, valutaBackup, valutaMonitorEsterno, valutaRepository, valutaSalute, valutaVivo } from './valuta.mjs'
 
 const ATTESA_TRA_TENTATIVI_VIVO_MS = 15_000
 const ATTESA_TRA_LETTURE_SALUTE_MS = 45_000
@@ -117,6 +121,19 @@ export async function esegui({
             } catch (err) {
                 log(`::warning::monitor esterno non verificabile in questo giro: ${err instanceof Error ? err.message : String(err)}`)
             }
+        }
+
+        // 5. IL REPOSITORY. Privato su GitHub Free = 2.000 minuti di Actions al mese, macchine da 2 core e
+        //    main senza protezione (`valutaRepository`). Il 25/11/2026 i minuti sono finiti e si sono
+        //    fermati backup, CI e questo campanello: va visto al primo giro, non quando non gira più niente.
+        try {
+            const { privato } = await gh.visibilita()
+            const incRepo = valutaRepository({ privato })
+            log(`repository: ${privato ? 'PRIVATO → INCIDENTE' : 'pubblico → ok'}`)
+            verificate.add('repo-privato')
+            if (incRepo) incidenti.push(incRepo)
+        } catch (err) {
+            log(`::warning::visibilità del repository non verificabile in questo giro: ${err instanceof Error ? err.message : String(err)}`)
         }
     }
 

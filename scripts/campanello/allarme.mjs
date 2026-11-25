@@ -114,6 +114,17 @@ export function creaGitHub({ repo, token, fetchImpl = fetch }) {
             return (r?.workflow_runs ?? []).filter((g) => typeof g?.display_title === 'string' && g.display_title.includes(TITOLO_DA_FUORI))
         },
 
+        /**
+         * Se il repository è privato (`valutaRepository`, valuta.mjs). Il campo `private` di
+         * `GET /repos/{repo}`: i metadati si leggono con il solo `contents: read` del workflow.
+         * Un campo assente o non booleano è un errore, non un «pubblico»: chi chiama non decide su un buco.
+         */
+        async visibilita() {
+            const r = await chiama('GET', `/repos/${repo}`)
+            if (typeof r?.private !== 'boolean') throw new Error(`GitHub GET /repos/${repo}: campo «private» assente`)
+            return { privato: r.private }
+        },
+
         /** `identical` / `ahead` / `behind` / `diverged`: la posizione di `a` rispetto a `b`. */
         async confronta(base, testa) {
             const r = await chiama('GET', `/repos/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(testa)}`)

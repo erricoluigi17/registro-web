@@ -84,7 +84,10 @@ una stima sarebbe peggio del vuoto: è esattamente il modo in cui questo file è
 falso per due settimane.
 
 **Il repository è pubblico**: mai segreti, mai PII reali di famiglie o bambini in codice, test, PRD o
-messaggi di commit.
+messaggi di commit. Si chiama **`erricoluigi17/registro-web`** dal 2026-11-25 (era `kidville-web`). **Non
+renderlo privato** senza un piano a pagamento: su GitHub Free ha 2.000 minuti di Actions al mese, e dal 17 al
+25/11/2026 è bastato questo per fermare backup, CI e campanello (vedi `docs/cicd.md`, «Repository privato»).
+Il campanello lo controlla (`[repo-privato]`).
 
 ## Permessi — stato al 2026-09-18
 

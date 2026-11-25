@@ -75,7 +75,7 @@ import {
  * ──────────────────────────────────────────────────────────────────────────── */
 
 /** Il repository dei deploy (pubblico): la P7 legge da qui i deploy di produzione. */
-export const REPO_GITHUB = 'erricoluigi17/kidville-web'
+export const REPO_GITHUB = 'erricoluigi17/registro-web'
 
 /** Al più 20 `getByFilename` con `--xml-fuori-app` (D1 §3.2), a 5 s l'una dall'altra. */
 export const MAX_XML_FUORI_APP = 20

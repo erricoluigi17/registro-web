@@ -11,6 +11,7 @@ import {
     valutaBackup,
     valutaDopoDeploy,
     valutaMonitorEsterno,
+    valutaRepository,
     valutaSalute,
     valutaVivo,
 } from '../../scripts/campanello/valuta.mjs'
@@ -140,6 +141,19 @@ describe('valutaMonitorEsterno', () => {
 
     it('una data illeggibile non conta come battito', () => {
         expect(valutaMonitorEsterno({ giri: [{ created_at: 'boh' }], adesso: ADESSO })?.chiave).toBe('monitor-esterno-muto')
+    })
+})
+
+describe('valutaRepository', () => {
+    it('privato → `repo-privato`, con i 2.000 minuti e la protezione di main nel testo', () => {
+        const inc = valutaRepository({ privato: true })
+        expect(inc?.chiave).toBe('repo-privato')
+        expect(inc?.dettaglio).toContain('2.000 minuti')
+        expect(inc?.dettaglio).toContain('protezione di main')
+    })
+
+    it('pubblico → nessun incidente', () => {
+        expect(valutaRepository({ privato: false })).toBeNull()
     })
 })
 
