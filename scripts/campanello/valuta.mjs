@@ -175,6 +175,32 @@ export function valutaMonitorEsterno({ giri, adesso }) {
 }
 
 /**
+ * IL REPOSITORY. `privato` = il campo `private` di `GET /repos/{repo}`. Privato → `repo-privato`.
+ *
+ * Perché è un incidente e non una preferenza (misurato il 2026-11-25): l'account è su GitHub Free, e un
+ * repository privato su GitHub Free ha
+ *   · 2.000 minuti di Actions AL MESE per tutto l'account, contro una CI che ne usa fino a 150 a giro e
+ *     un campanello che ne conta uno a giro (circa 2.900 al mese da solo);
+ *   · macchine da 2 core e 7 GB invece di 4 core e 16 GB: la CI dura il doppio e l'E2E cade per timeout;
+ *   · nessuna protezione di `main` (GitHub risponde 403 «Upgrade to GitHub Pro»), e quando torna
+ *     pubblico la protezione NON ritorna da sola: va rimessa.
+ * Il 17/11/2026 il repository è stato reso privato; il 25/11 alle 03:04 UTC i minuti sono finiti e da
+ * lì backup su R2, CI e questo stesso campanello hanno smesso di girare. Questo controllo avrebbe
+ * suonato al primo giro dopo il cambio, otto giorni prima del blocco.
+ * @returns {Incidente | null}
+ */
+export function valutaRepository({ privato }) {
+    if (privato !== true) return null
+    return {
+        chiave: 'repo-privato',
+        titolo: 'Il repository è privato: Actions ha 2.000 minuti al mese e main non è protetto',
+        dettaglio:
+            'Su GitHub Free un repository privato ha 2.000 minuti di Actions al mese (la CI ne usa fino a 150 a giro), macchine da 2 core invece di 4 e nessuna protezione di main. ' +
+            'Finiti i minuti si fermano backup, CI e campanello. Se il privato è voluto serve un piano a pagamento; altrimenti va reso pubblico e la protezione di main rimessa: vedi docs/cicd.md, «Repository privato».',
+    }
+}
+
+/**
  * LA VERIFICA DOPO IL DEPLOY. Restituisce l'elenco dei guasti (vuoto = rilascio buono) e, a parte, le
  * note che non fermano niente.
  *

@@ -37,7 +37,9 @@
 import { escapeHtml, mandaEmail } from '../scripts/campanello/allarme.mjs'
 
 export const URL_VIVO = 'https://app.kidville.it/api/health/vivo'
-export const REPO = 'erricoluigi17/kidville-web'
+// Rinominato il 2026-11-25 (era `erricoluigi17/kidville-web`): GitHub reindirizza il vecchio nome
+// (301 sulle letture, 307 sui `dispatches`), ma un Worker non deve reggersi su un reindirizzamento.
+export const REPO = 'erricoluigi17/registro-web'
 export const WORKFLOW = 'campanello.yml'
 /** L'input che il campanello usa per riconoscere i giri partiti da qui (vedi `campanello.yml`). */
 export const ORIGINE = 'cloudflare'

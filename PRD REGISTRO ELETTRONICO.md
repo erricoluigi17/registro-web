@@ -1,3 +1,41 @@
+## 🚨 Changelog — GitHub Actions fermo: il repository privato aveva finito i minuti — 2026-11-25 (ramo `fix/repo-pubblico-campanello`)
+
+**Cosa è successo.** Il 17/11 il repository è stato reso privato, per metterlo nella sincronia automatica fra i due Mac.
+L'account è su GitHub Free: un repository privato lì ha **2.000 minuti di Actions al mese**, macchine da **2 core e 7 GB**
+invece di 4 e 16, e **nessuna protezione di `main`**. Misurato: la CI è raddoppiata («Lint · Typecheck · Unit» da 31–53 a
+61–115 minuti, E2E da 26–36 a 42–65) e l'E2E ha cominciato a cadere per timeout (5 giri rossi su 7). Il 25/11 alle 03:04
+UTC i minuti sono finiti: da lì GitHub ha rifiutato ogni job. Saltato il backup su R2 delle 02:23, ferma la CI, e il
+campanello fallito ogni quarto d'ora senza guardare il sito (sono le email «Run failed» arrivate al titolare). **Il sito è
+rimasto sano**: `/api/health` verificato a mano, 17 controlli `ok`.
+
+**Decisione del titolare (25/11):** il repository torna **pubblico** con un **nome nuovo**, `erricoluigi17/registro-web`.
+
+| Area | Stato | Che cosa è |
+|---|---|---|
+| Repository pubblico e rinominato | ✅ fatto (25/11) | `registro-web`; GitHub reindirizza il vecchio nome (301 sulle letture, 307 sulle scritture). Il campanello rilanciato a mano è verde |
+| Protezione di `main` | ✅ rimessa (25/11) | Identica a quella del 04/11: i due check, `strict`, `enforce_admins`, niente force push. Col privato era sparita e tornando pubblico NON si rimette da sola |
+| Backup del 25/11 | ✅ rilanciato a mano | `completo`. Non spegne `[backup-vecchio]` (conta solo il giro automatico): lo spegne il giro delle 02:23 |
+| Sincronia fra i Mac | ✅ su questo Mac, ⏳ sul Mac mini | kidville-web tolto da `repository.txt` (la sincronia fa `git add -A`: su un repository pubblico pubblicherebbe ogni file lasciato in cartella). Sul Mac mini va rilanciato `installa-sincronia.sh` |
+| Campanello: nuovo controllo `[repo-privato]` | ✅ in questo ramo | `valutaRepository` + `gh.visibilita()` (`GET /repos/{repo}`, campo `private`): privato → segnalazione ed email. Avrebbe suonato il 17/11, otto giorni prima del blocco. Lettura fallita = né apre né chiude |
+| Nome nuovo nel codice | ✅ in questo ramo | `monitor-esterno/worker.mjs` (`REPO`), `scripts/ci/attendi-controlli.sh`, `scripts/numerazione-serie.mjs`. ⏳ il Worker va ripubblicato (`npx wrangler@4.148.0 deploy`, accesso Cloudflare del titolare); fino ad allora va avanti sul reindirizzamento |
+| `supabase/.temp/cli-latest` | ✅ non più tracciato | Era già in `supabase/.gitignore` ma tracciato: la CLI lo riscrive, e la sincronia lo ha spinto su `main` tre volte (con tre giri di CI) |
+
+**Test.** `campanello-valuta` e `campanello-esegui`: privato apre `repo-privato` con email (anche col sito giù), pubblico lo
+chiude, lettura fallita non apre e non chiude, `private` assente è un errore e non un «pubblico». Rotto di proposito
+`valutaRepository`: 3 test rossi.
+
+**Documenti.** `docs/cicd.md`: nuova sezione «Repository privato: su GitHub Free ferma tutto», protezione di `main` con il
+comando per rimetterla, riga `[repo-privato]` nella tabella «Quando suona». `CLAUDE.md`: il nome nuovo e la regola.
+
+**Da dire al titolare.**
+1. **Il nome nuovo non rende il codice irriconoscibile.** Nasconde il repository a chi cerca «kidville», ma i file dicono
+   Kidville ovunque, e il proprietario resta `erricoluigi17`. Il vecchio indirizzo reindirizza a quello nuovo finché non
+   nasce un altro repository chiamato `kidville-web`: crearlo vuoto spezza il rimando, ma solo dopo che entrambi i Mac
+   puntano al nome nuovo.
+2. **Sul Mac mini** va rilanciato `installa-sincronia.sh` dalla cartella «MAC CONDIVISO», e aggiornato il remote
+   (`git remote set-url origin https://github.com/erricoluigi17/registro-web.git`).
+3. **Il Worker di Cloudflare** va ripubblicato con il nome nuovo: serve il suo accesso (`npx wrangler login`).
+
 ## 🧭 Changelog — Anno scolastico, terzo lotto di semplificazioni dopo il terzo giro della segretaria inesperta (agente 2) — 2026-11-15 (ramo `feat/anno-semplificazioni-3`)
 
 **Perché.** Al terzo giro la segretaria inesperta ha preparato il 2027/28 in Demo senza bloccarsi: obiettivi tutti riusciti, voti da 1 a 3, giudizio «accettabile, vicino al semplice». Restavano piccoli difetti veri: testi che si contraddicono, una scheda che non si apre dove dovrebbe, la pagina che salta in cima, nessun segno di caricamento. Quattro lotti (F1-F4) li correggono. Nessuna migrazione, nessuna route nuova.

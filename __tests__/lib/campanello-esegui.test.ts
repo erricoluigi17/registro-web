@@ -26,7 +26,9 @@ interface Segnalazione {
 }
 
 /** Un GitHub in memoria con la stessa interfaccia di `creaGitHub`. */
-function ghFinto(opzioni: { giri?: unknown[] | Error; daFuori?: unknown[] | Error; aperte?: Segnalazione[]; confronto?: string } = {}) {
+function ghFinto(
+    opzioni: { giri?: unknown[] | Error; daFuori?: unknown[] | Error; privato?: boolean | Error; aperte?: Segnalazione[]; confronto?: string } = {},
+) {
     const segnalazioni: Segnalazione[] = opzioni.aperte ?? []
     let prossimo = 100
     return {
@@ -64,6 +66,11 @@ function ghFinto(opzioni: { giri?: unknown[] | Error; daFuori?: unknown[] | Erro
             if (opzioni.daFuori instanceof Error) throw opzioni.daFuori
             // Di base il monitor esterno è vivo: un battito 10 minuti fa.
             return opzioni.daFuori ?? [{ display_title: 'Campanello (da Cloudflare)', created_at: new Date(ADESSO - 10 * 60_000).toISOString() }]
+        },
+        async visibilita() {
+            if (opzioni.privato instanceof Error) throw opzioni.privato
+            // Di base il repository è pubblico.
+            return { privato: opzioni.privato ?? false }
         },
         async confronta() {
             return opzioni.confronto ?? 'sconosciuto'
@@ -290,6 +297,52 @@ describe('il giro del campanello', () => {
         expect(log.mock.calls.some((c) => String(c[0]).includes('monitor esterno non verificabile'))).toBe(true)
     })
 
+    // Il 17/11/2026 il repository è diventato privato; il 25/11 i 2.000 minuti di GitHub Free sono finiti
+    // e backup, CI e campanello si sono fermati. Il campanello deve accorgersene al PRIMO giro.
+    it('con il repository privato apre `repo-privato` e manda l\'email, anche col sito sano', async () => {
+        const gh = ghFinto({ privato: true })
+        const f = fetchFinto({ [`${BASE}/api/health/vivo`]: [VIVO_OK], [`${BASE}/api/health`]: [SALUTE_OK] })
+
+        const { esito } = await giro(gh, f)
+
+        expect(esito.incidenti.map((i) => i.chiave)).toEqual(['repo-privato'])
+        expect(gh.segnalazioni.map((s) => s.titolo.split(']')[0])).toEqual(['[repo-privato'])
+        expect(gh.segnalazioni[0].corpo).toContain('2.000 minuti')
+        expect(f.richiesteA('https://api.resend.com/emails')).toBe(1)
+        expect(esito.errori).toEqual([])
+    })
+
+    it('col sito GIÙ il repository privato si segnala lo stesso: è un guasto indipendente', async () => {
+        const gh = ghFinto({ privato: true })
+        const f = fetchFinto({ [`${BASE}/api/health/vivo`]: [VIVO_GIU] })
+
+        const { esito } = await giro(gh, f)
+
+        expect(esito.incidenti.map((i) => i.chiave).sort()).toEqual(['app-giu', 'repo-privato'])
+    })
+
+    it('tornato pubblico chiude `repo-privato`, con un commento', async () => {
+        const gh = ghFinto({ privato: false, aperte: [segnalazioneAperta(12, 'repo-privato')] })
+        const f = fetchFinto({ [`${BASE}/api/health/vivo`]: [VIVO_OK], [`${BASE}/api/health`]: [SALUTE_OK] })
+
+        const { esito } = await giro(gh, f)
+
+        expect(esito.esiti.chiuse).toBe(1)
+        expect(gh.segnalazioni[0].aperta).toBe(false)
+        expect(gh.segnalazioni[0].commenti[0]).toContain('[repo-privato]')
+    })
+
+    it('se la visibilità non si legge NON apre e NON chiude `repo-privato`', async () => {
+        const gh = ghFinto({ privato: new Error('GitHub GET /repos/o/r → 502'), aperte: [segnalazioneAperta(12, 'repo-privato')] })
+        const f = fetchFinto({ [`${BASE}/api/health/vivo`]: [VIVO_OK], [`${BASE}/api/health`]: [SALUTE_OK] })
+
+        const { esito, log } = await giro(gh, f)
+
+        expect(esito.incidenti).toEqual([])
+        expect(gh.segnalazioni[0].aperta).toBe(true)
+        expect(log.mock.calls.some((c) => String(c[0]).includes('visibilità del repository non verificabile'))).toBe(true)
+    })
+
     it('un incidente aperto da più di 24 ore riceve un promemoria, senza email', async () => {
         const gh = ghFinto({ aperte: [segnalazioneAperta(7, 'app-giu', 30)] })
         const f = fetchFinto({ [`${BASE}/api/health/vivo`]: [VIVO_GIU] })
@@ -436,6 +489,21 @@ describe('creaGitHub (le chiamate vere all\'API)', () => {
         const gh = creaGitHub({ repo: 'o/r', token: 't', fetchImpl: f.impl })
 
         expect((await gh.giriDaFuori()).map((g: { created_at: string }) => g.created_at)).toEqual(['b'])
+    })
+
+    it('legge la visibilità dal campo `private` del repository', async () => {
+        const f = fetchFinto({ 'https://api.github.com/repos/o/r': [{ status: 200, corpo: { private: true } }, { status: 200, corpo: { private: false } }] })
+        const gh = creaGitHub({ repo: 'o/r', token: 't', fetchImpl: f.impl })
+
+        expect(await gh.visibilita()).toEqual({ privato: true })
+        expect(await gh.visibilita()).toEqual({ privato: false })
+    })
+
+    it('un `private` assente è un errore, non un «pubblico»', async () => {
+        const f = fetchFinto({ 'https://api.github.com/repos/o/r': [{ status: 200, corpo: { name: 'r' } }] })
+        const gh = creaGitHub({ repo: 'o/r', token: 't', fetchImpl: f.impl })
+
+        await expect(gh.visibilita()).rejects.toThrow(/private/)
     })
 })
 

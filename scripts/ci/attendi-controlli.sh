@@ -30,7 +30,7 @@ if [ "$#" -lt 3 ]; then
 fi
 
 SHA="$1"; MAX="$2"; shift 2
-REPO="${REPO:-erricoluigi17/kidville-web}"
+REPO="${REPO:-erricoluigi17/registro-web}"
 FINE=$(( $(date +%s) + MAX * 60 ))
 
 while :; do

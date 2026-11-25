@@ -84,9 +84,44 @@ quando serve sapere se il database è allineato ai file del repo.
 
 ### Branch protection (Settings → Branches → `main`)
 
-- Require a pull request before merging
-- Require status checks to pass → seleziona **`Lint · Typecheck · Unit`** e **`E2E (Playwright)`**
-- (consigliato) Require branches to be up to date before merging
+- Require status checks to pass → **`Lint · Typecheck · Unit`** e **`E2E (Playwright)`**
+- Require branches to be up to date before merging (`strict: true`)
+- Do not allow bypassing the above settings (`enforce_admins: true`); niente force push, niente cancellazione
+- Nessuna approvazione obbligatoria: con un solo sviluppatore renderebbe ogni PR non mergiabile
+
+Per rimetterla da terminale (è quello che si è fatto il 2026-11-25, identica a quella letta il 04/11):
+
+```bash
+gh api -X PUT repos/erricoluigi17/registro-web/branches/main/protection --input - <<'EOF'
+{"required_status_checks":{"strict":true,"checks":[{"context":"Lint · Typecheck · Unit","app_id":15368},{"context":"E2E (Playwright)","app_id":15368}]},
+ "enforce_admins":true,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":false,"allow_deletions":false}
+EOF
+```
+
+### Repository privato: su GitHub Free ferma tutto
+
+Il repository è **`erricoluigi17/registro-web`**, **pubblico** (rinominato il 2026-11-25: era `kidville-web`;
+GitHub reindirizza il vecchio nome). L'account è su **GitHub Free**, e lì un repository privato ha:
+
+| | pubblico | privato (Free) |
+|---|---|---|
+| minuti di Actions | illimitati sulle macchine standard | **2.000 al mese per tutto l'account**, poi i job non partono |
+| macchina di `ubuntu-latest` | 4 core, 16 GB | **2 core, 7 GB** |
+| protezione di `main` | sì | **no** (`403 Upgrade to GitHub Pro`), e tornando pubblico **non si rimette da sola** |
+
+**Cosa è successo (17–25/11/2026).** Il 17/11 il repository è stato reso privato per metterlo nella sincronia
+automatica fra i due Mac. Misurato: la CI è passata da 31–53 a 61–115 minuti per «Lint · Typecheck · Unit» e da 26–36
+a 42–65 per l'E2E, che ha cominciato a cadere per timeout (5 giri rossi su 7). La sincronia ha anche spinto 5
+salvataggi automatici direttamente su `main` (la protezione non c'era più), ognuno con un giro di CI. Il 24/11 alle
+01:00 UTC GitHub ha avvisato del 90%, il 25/11 alle 03:04 del 100%: da lì ogni job è stato rifiutato con *«recent
+account payments have failed or your spending limit needs to be increased»* — backup su R2 delle 02:23 saltato, CI
+ferma, e il campanello (che ne consuma uno a giro, ~2.900 al mese da solo) fallito ogni quarto d'ora senza guardare il
+sito. Il 25/11 sera: pubblico, rinominato, protezione di `main` rimessa, backup rilanciato a mano, kidville-web tolto
+dalla sincronia (un repository pubblico non ci va mai: la sincronia fa `git add -A`).
+
+**Da allora il campanello lo controlla** (`[repo-privato]`, vedi sotto). Se un giorno il privato è voluto, prima
+serve un piano a pagamento (GitHub Pro per la protezione di `main`, un budget per i minuti: al ritmo di novembre
+~20.000 minuti al mese a 0,006 $) — e quel controllo va tolto con la stessa decisione.
 
 ### Environment `production` (Settings → Environments)
 
@@ -325,7 +360,7 @@ Atteso nei log di `wrangler dev`: `monitor-backup: esito=fallito … HTTP 401 {"
 
 ### `campanello.yml` — ogni ~15 minuti (il battito di Cloudflare), con il `cron` di GitHub come rinforzo
 
-Guarda quattro cose; se una non va **apre una segnalazione** nel repository (etichetta `campanello`, titolo
+Guarda cinque cose; se una non va **apre una segnalazione** nel repository (etichetta `campanello`, titolo
 `[chiave] testo`, corpo pubblico: solo ciò che gli endpoint di salute già espongono) e **manda un'email** (Resend, ai
 `SENTINELLA_DESTINATARI`); quando il problema rientra **chiude la segnalazione da sola**.
 
@@ -342,6 +377,9 @@ Guarda quattro cose; se una non va **apre una segnalazione** nel repository (eti
   verità, ha già un token, e chiederlo da Vercel (indirizzi condivisi) sarebbe a 60 richieste l'ora.
 - **Il monitor esterno**: un giro partito da Cloudflare è la prova che il monitor è vivo; gli altri guardano l'ultimo
   battito, e oltre **90 minuti** (o nessuno) → `monitor-esterno-muto`. Vedi la sezione qui sopra.
+- **Il repository** (dal 25/11/2026): se è diventato **privato** → `repo-privato`. Su GitHub Free vuol dire 2.000
+  minuti di Actions al mese, macchine da 2 core e `main` senza protezione (vedi «Repository privato» in Setup GitHub).
+  Il 17/11 nessuno se n'è accorto, e il 25/11 i minuti finiti hanno fermato backup, CI e questo campanello.
 - **Una segnalazione si chiude solo se la sua chiave è stata misurata in quel giro**: con il sito giù la salute non si
   legge, e le segnalazioni `salute:*` restano aperte (non è «rientrato», è «non l'ho guardato»). Lo stesso per il backup
   quando l'API dei giri non risponde.
@@ -367,6 +405,7 @@ dell'allarme del backup): `RESEND_API_KEY` e `SENTINELLA_DESTINATARI`.
 | `[salute:schema-atteso]` / `[salute:auth]` | una tabella manca / Auth non risponde | migrazione non applicata (integrazione Supabase) / stato di Auth |
 | `[backup-vecchio]` | l'ultimo giro **automatico** riuscito del backup (lo `schedule` o «Backup notturno completo (da Cloudflare)») è più vecchio di 30 ore, o non c'è | i giri di `backup-notturno.yml` (`gh run list --workflow backup-notturno.yml`) e `docs/runbook-ripristino.md`. Un giro **manuale** `completo` fa il backup ma non spegne l'allarme: aspetta il primo giro automatico |
 | `[monitor-esterno-muto]` | da oltre 90 minuti non arriva un giro del campanello partito da Cloudflare | il Worker `kidville-monitor-esterno` nel pannello di Cloudflare (Logs): un `401 Bad credentials` vuol dire token GitHub scaduto (vedi «Monitor esterno»); un Worker sparito si ripubblica con `npx wrangler@4.148.0 deploy` |
+| `[repo-privato]` | il repository è privato: su GitHub Free 2.000 minuti di Actions al mese, macchine da 2 core, `main` senza protezione | se non è voluto: `gh repo edit erricoluigi17/registro-web --visibility public --accept-visibility-change-consequences`, poi **rimettere la protezione di `main`** (comando in «Branch protection»: non torna da sola). Se è voluto: piano a pagamento prima, e togliere il controllo |
 | `[deploy:<sha>]` | il rilascio non passa la verifica (versione, vivo, regione, salute `down`) | il testo dice cosa; Instant Rollback se il sito è rotto |
 | `[prova]` | è la prova dell'allarme (`simula_guasto`): non è successo niente | si chiude da sola al giro successivo |
 
