@@ -269,6 +269,10 @@ stesso di R2). Un Worker, `kidville-monitor-esterno`, gira con il **cron di Clou
 4. alle **02:23 UTC** (secondo cron) fa partire `backup-notturno.yml`; se GitHub rifiuta, manda l'email «Backup
    notturno NON partito». Se il sito è giù **e** il campanello non parte, manda l'email «Sito giù e campanello NON
    partito», una per ora. È il **secondo canale**: quando è GitHub a rifiutare, l'allarme del campanello non parte.
+5. a **ogni** giro (dal 25/11/2026) guarda l'ultimo giro del campanello partito da Cloudflare: se GitHub l'ha accettato
+   e chiuso **senza eseguire un solo passo**, manda l'email «GitHub Actions non esegue il campanello», una al giorno, e
+   col sito giù conta il campanello come **non partito** (email oraria del punto 4). Vedi «Un lancio accettato non è un
+   giro eseguito» qui sotto.
 
 Il Worker non duplica l'allarme (segnalazione, email, chiusura da sola restano del campanello): lo fa **suonare in
 tempo**. Non ha un indirizzo pubblico (`workers_dev = false`) e non legge dati delle famiglie.
@@ -278,8 +282,36 @@ del campanello che **non** parte da lì (il `cron` di GitHub, un giro a mano) gu
 oltre **90 minuti** (sei battiti mancati) apre `monitor-esterno-muto`. Il Worker spento, il token scaduto o Cloudflare
 fermo diventano un allarme, non un silenzio.
 
+**Un lancio accettato non è un giro eseguito (dal 25/11/2026).** Il `204` di GitHub al `workflow_dispatch` dice solo che
+il lancio è stato preso. Il 25/11, coi minuti di Actions finiti, GitHub ha accettato ogni lancio e chiuso ogni giro
+`failure` con **zero passi** (annotazione: *«The job was not started because recent account payments have failed or
+your spending limit needs to be increased»*): per 18 ore il campanello non ha guardato il sito, e `monitor-esterno-muto`
+non poteva suonare perché è il campanello stesso a guardarlo. Da allora il Worker, a ogni giro (`guardaUltimoGiro`):
+
+- legge `GET /repos/erricoluigi17/registro-web/actions/workflows/campanello.yml/runs?event=workflow_dispatch&status=completed&per_page=10`
+  e prende il più recente con il titolo «Campanello (da Cloudflare)»;
+- se è `failure` (o `startup_failure`, nessun job creato: un `campanello.yml` che GitHub non legge) e nessun job ha
+  eseguito un passo (`steps` vuoto), legge il perché da `GET <check_run_url>/annotations` — solo se l'indirizzo è di
+  `api.github.com`, il token non va altrove — e manda **«GitHub Actions non esegue il campanello»** col messaggio di
+  GitHub nel testo. Un `failure` **con** dei passi è un giro vero finito male: lo racconta GitHub con la sua email;
+- **una email al giorno** (chiave `kidville-actions-ferme-AAAA-MM-GG-<impronta del messaggio>`), non una per ora: col
+  sito sano restano fermi backup e CI, da sistemare in giornata, e il 25/11 sarebbero state 18 email uguali. Il rischio
+  grave, il sito giù mentre il campanello è cieco, ha la sua email **ogni ora**: con il sito giù un giro accettato e non
+  eseguito conta come campanello non partito, e parte «Sito giù e campanello NON partito»;
+- scrive sempre una riga `monitor-actions: esito=ok|rifiutato|nessun-giro|illeggibile` (rifiuto e lettura fallita a
+  livello error, col corpo di GitHub e senza il token).
+
+Quando arriva l'email: il messaggio di GitHub dice il perché. Per i minuti o i pagamenti, GitHub → Settings → Billing &
+plans; se il repository è diventato privato senza volerlo, `gh repo edit erricoluigi17/registro-web --visibility public
+--accept-visibility-change-consequences` (vedi «Repository privato» in Setup GitHub). Il backup della notte saltata si
+rilancia a mano quando le Actions ripartono: `gh workflow run backup-notturno.yml -f modalita=completo`.
+Su un repository pubblico l'annotazione (un check run) si legge senza permessi in più; su un privato il token del Worker
+avrebbe bisogno anche di *Checks: read-only*, e senza l'email parte lo stesso, con «annotazione non leggibile: HTTP …» al
+posto del messaggio. Un giro rilanciato **a mano** non spegne niente: conta solo il prossimo giro partito da Cloudflare.
+
 **I segreti** sono tre, nei segreti del Worker (mai nel repository, che è pubblico): `GITHUB_TOKEN_CAMPANELLO`, un
-token GitHub **a grana fine** limitato a `kidville-web` e al solo permesso **Actions: read and write**, più
+token GitHub **a grana fine** limitato a questo repository (`registro-web`, era `kidville-web`) e al solo permesso
+**Actions: read and write**, più
 `RESEND_API_KEY` e `SENTINELLA_DESTINATARI`, gli stessi del campanello. Li mette il titolare:
 `pbpaste | npx wrangler@4.148.0 secret put <NOME>`. Se mancano quelli di Resend, il Worker lo scrive in
 `console.error` e va avanti. Il token scade: la data è scritta qui sotto e in `00 CONTESTO/04_scadenze.md` del brain.
@@ -305,8 +337,10 @@ Alla scadenza si genera un token nuovo con gli stessi limiti e lo si rimette con
 | mettere i segreti dell'email (lo fa il titolare) | `pbpaste \| npx wrangler@4.148.0 secret put RESEND_API_KEY`, poi lo stesso per `SENTINELLA_DESTINATARI` |
 | provare l'email del secondo canale | in locale, vedi «Prova del secondo canale» qui sotto |
 
-Si prova con `__tests__/lib/monitor-esterno.test.ts` (fetch finto, numeri letterali). Il monitor lancia il backup ma
-non ne guarda l'esito: l'età dell'ultimo giro riuscito la guarda `campanello.yml`.
+Si prova con `__tests__/lib/monitor-esterno.test.ts` (fetch finto, numeri letterali, le forme dei giri veri del
+25/11). Il monitor lancia il backup ma non ne guarda l'esito: l'età dell'ultimo giro riuscito la guarda `campanello.yml`.
+Se le Actions sono ferme lo dice comunque l'email «GitHub Actions non esegue il campanello», perché backup e campanello
+girano sulle stesse Actions.
 
 **Prova del secondo canale (in locale, la fa il titolare).** Dopo le 03:00 UTC, perché la chiave d'idempotenza è
 una per giorno UTC e la prova non deve consumare quella della notte. Nella cartella `monitor-esterno/` il titolare

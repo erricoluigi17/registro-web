@@ -1,3 +1,29 @@
+## 🔔 Changelog — Monitor esterno: un lancio accettato non è un giro eseguito — 2026-11-25 (ramo `fix/monitor-giro-rifiutato`)
+
+**Il buco.** Il secondo canale del monitor esterno (l'email Resend mandata direttamente dal Worker di Cloudflare) scattava
+solo se GitHub **rifiutava** il `workflow_dispatch` (HTTP diverso da 204). Il 25/11, coi minuti di Actions finiti, GitHub ha
+**accettato** ogni lancio (204) e poi ha chiuso ogni giro `failure` con **zero passi**, con l'annotazione *«The job was not
+started because recent account payments have failed or your spending limit needs to be increased»*. Per 18 ore il
+campanello non ha guardato il sito e il Worker non ha detto niente: se il sito fosse caduto, nessun allarme. Fermi anche il
+backup delle 02:23 e la CI, che girano sulle stesse Actions.
+
+| Area | Stato | Che cosa è |
+|---|---|---|
+| Controllo dell'ultimo giro | ✅ in questo ramo | `guardaUltimoGiro` in `monitor-esterno/worker.mjs`, a **ogni** giro del Worker (ogni 5 minuti): legge `GET …/campanello.yml/runs?event=workflow_dispatch&status=completed&per_page=10`, prende il più recente «Campanello (da Cloudflare)»; se è `failure` o `startup_failure` e nessun job ha eseguito un passo (`steps` vuoto), legge il «perché» da `GET <check_run_url>/annotations` (solo indirizzi di `api.github.com`: il token non va altrove). Un `failure` con dei passi è un giro vero finito male: non conta |
+| Email «GitHub Actions non esegue il campanello» | ✅ in questo ramo | **Una al giorno**, non una per ora: col sito sano restano fermi backup e CI, cose da sistemare in giornata (il 25/11 sarebbero state 18 email uguali). Chiave `kidville-actions-ferme-AAAA-MM-GG-<impronta del messaggio>`: un motivo diverso nello stesso giorno è una notizia nuova e parte; nel testo il messaggio di GitHub, mai il numero del giro (cambierebbe il testo dentro la chiave: 409 di Resend) |
+| Sito giù col giro accettato e non eseguito | ✅ in questo ramo | Conta come «campanello NON partito»: parte l'email **oraria** «Sito giù e campanello NON partito», come quando GitHub rifiuta il lancio. È il caso grave del 25/11 |
+| Log | ✅ in questo ramo | Una riga `monitor-actions: esito=ok\|rifiutato\|nessun-giro\|illeggibile` a ogni giro, anche quando va tutto bene; rifiuto e lettura fallita a livello error, col corpo di GitHub senza il token |
+| `REPO` = `erricoluigi17/registro-web` | ✅ in questo ramo | La stessa identica modifica della PR #330: si uniscono senza conflitto in qualunque ordine |
+| Worker ripubblicato | ⏳ titolare | `cd monitor-esterno && npx wrangler@4.148.0 deploy` (il login di wrangler su questo Mac è scaduto). Poi nei log del Worker deve comparire `monitor-actions: esito=ok` |
+
+**Test.** `__tests__/lib/monitor-esterno.test.ts`, con le forme copiate dai giri veri del 25/11 (`45702607280` rifiutato,
+`45704924584` riuscito): 53 casi. Rotto di proposito il codice in dieci punti (passi ignorati, titolo non filtrato, 204
+creduto col sito giù, numero del giro nel testo, token verso un indirizzo non di GitHub, successo non scritto,
+`startup_failure` ignorato, controllo solo sul battito, chiave senza impronta, token non tolto): ogni volta da 1 a 9 test
+rossi.
+
+---
+
 ## 🧭 Changelog — Anno scolastico, terzo lotto di semplificazioni dopo il terzo giro della segretaria inesperta (agente 2) — 2026-11-15 (ramo `feat/anno-semplificazioni-3`)
 
 **Perché.** Al terzo giro la segretaria inesperta ha preparato il 2027/28 in Demo senza bloccarsi: obiettivi tutti riusciti, voti da 1 a 3, giudizio «accettabile, vicino al semplice». Restavano piccoli difetti veri: testi che si contraddicono, una scheda che non si apre dove dovrebbe, la pagina che salta in cima, nessun segno di caricamento. Quattro lotti (F1-F4) li correggono. Nessuna migrazione, nessuna route nuova.
