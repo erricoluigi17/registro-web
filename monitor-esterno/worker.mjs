@@ -23,6 +23,15 @@
 // manda un'email (Resend). È il SECONDO CANALE: quando è GitHub a rifiutare, l'allarme del campanello
 // non può partire. Vale anche quando il sito è giù e il campanello non parte.
 //
+// IL GIRO ACCETTATO E NON ESEGUITO (25/11/2026). Un `204` al `workflow_dispatch` dice solo che GitHub ha
+// preso il lancio, non che lo eseguirà. Il 25/11 i minuti di Actions erano finiti: per 18 ore ogni
+// lancio è stato accettato e ogni giro è finito `failure` con ZERO passi («The job was not started
+// because recent account payments have failed…»). Il secondo canale non scattava (nessun rifiuto), il
+// campanello non guardava il sito: se il sito fosse caduto, nessun allarme. Fermi anche il backup e la
+// CI, che girano sulle stesse Actions. Da allora, a ogni giro, il Worker guarda l'ultimo giro del
+// campanello partito da qui (`guardaUltimoGiro`): se è finito senza un solo passo eseguito manda
+// un'email al giorno col messaggio di GitHub, e col sito giù conta come «campanello NON partito».
+//
 // I SEGRETI sono tre, nei segreti del Worker e mai in `wrangler.toml` (il repository è pubblico):
 //   · `GITHUB_TOKEN_CAMPANELLO`: token GitHub a grana fine, limitato a QUESTO repository e al solo
 //     permesso «Actions: read and write». Scade (la data sta in `docs/cicd.md`): se scade, il battito
@@ -34,10 +43,12 @@
 // con `npx wrangler@4.148.0 deploy` da questa cartella; si spegne con `npx wrangler@4.148.0 delete`.
 // Importa `scripts/campanello/allarme.mjs` (la stessa email del campanello): `wrangler` lo impacchetta.
 
-import { escapeHtml, mandaEmail } from '../scripts/campanello/allarme.mjs'
+import { TITOLO_DA_FUORI, escapeHtml, mandaEmail } from '../scripts/campanello/allarme.mjs'
 
 export const URL_VIVO = 'https://app.kidville.it/api/health/vivo'
-export const REPO = 'erricoluigi17/kidville-web'
+// Rinominato il 2026-11-25 (era `erricoluigi17/kidville-web`): GitHub reindirizza il vecchio nome
+// (301 sulle letture, 307 sui `dispatches`), ma un Worker non deve reggersi su un reindirizzamento.
+export const REPO = 'erricoluigi17/registro-web'
 export const WORKFLOW = 'campanello.yml'
 /** L'input che il campanello usa per riconoscere i giri partiti da qui (vedi `campanello.yml`). */
 export const ORIGINE = 'cloudflare'
@@ -54,6 +65,19 @@ export const CRON_BACKUP = '23 2 * * *'
 /** Dove portano le email del Worker: l'elenco dei giri, non un giro (quello, appunto, non è partito). */
 export const LINK_GIRI_BACKUP = `https://github.com/${REPO}/actions/workflows/${WORKFLOW_BACKUP}`
 export const LINK_GIRI_CAMPANELLO = `https://github.com/${REPO}/actions/workflows/${WORKFLOW}`
+/**
+ * Gli ultimi giri FINITI del campanello lanciati con `workflow_dispatch`: fra questi si cerca il più
+ * recente partito da qui (titolo «Campanello (da Cloudflare)»). Dieci bastano: quelli lanciati a mano
+ * sono rari, e una risposta piccola costa poco tempo di CPU al Worker.
+ */
+export const URL_GIRI_CAMPANELLO = `https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW}/runs?event=workflow_dispatch&status=completed&per_page=10`
+/**
+ * Le conclusioni in cui GitHub può aver chiuso un giro SENZA eseguirlo: `failure` con zero passi (i
+ * minuti finiti del 25/11) e `startup_failure` (nessun job creato: per esempio un `campanello.yml` che
+ * GitHub non riesce a leggere). Un `failure` CON dei passi è un giro vero finito male: lo racconta
+ * GitHub con la sua email, e il campanello ha comunque guardato il sito.
+ */
+const CONCLUSIONI_DA_CONTROLLARE = new Set(['failure', 'startup_failure'])
 
 /** Le intestazioni di ogni chiamata a GitHub. Il token sta solo qui: non finisce mai in un log. */
 function intestazioniGitHub(token) {
@@ -114,47 +138,189 @@ export async function suonaCampanello({ token, fetchImpl = fetch }) {
 }
 
 /**
+ * L'ultimo giro del campanello partito da qui: GitHub l'ha ESEGUITO, o l'ha accettato e chiuso senza
+ * eseguirlo? Restituisce `{ esito, giro, messaggio, http, corpo }` e non lancia mai.
+ *   · 'ok'          — l'ultimo giro ha eseguito almeno un passo, o è finito in un modo che non è un
+ *                     rifiuto (`success`, `cancelled`, un `failure` con dei passi…);
+ *   · 'rifiutato'   — `failure`/`startup_failure` e nessun job ha eseguito un passo (`steps` vuoto):
+ *                     `messaggio` è l'annotazione di GitHub, il «perché»;
+ *   · 'nessun-giro' — fra gli ultimi giri finiti nessuno è partito da qui (il Worker appena acceso);
+ *   · 'illeggibile' — GitHub non ha risposto o ha risposto male: `http` e `corpo` dicono come.
+ * Il messaggio si legge da `GET <check_run_url>/annotations`, solo se l'indirizzo è di `api.github.com`
+ * (il token non va mai altrove). Se non si legge, il rifiuto vale lo stesso: il messaggio lo dice.
+ */
+export async function guardaUltimoGiro({ token, fetchImpl = fetch }) {
+    if (!token) return { esito: 'illeggibile', http: 0, corpo: 'manca GITHUB_TOKEN_CAMPANELLO: i giri del campanello NON si leggono' }
+    const pulito = (testo) => senzaSegreto(testo, token)
+    const leggi = async (url) => {
+        const res = await fetchImpl(url, {
+            method: 'GET',
+            headers: intestazioniGitHub(token),
+            signal: AbortSignal.timeout(TEMPO_MAX_RICHIESTA_MS),
+        })
+        return { http: res.status, testo: await res.text() }
+    }
+    try {
+        const elenco = await leggi(URL_GIRI_CAMPANELLO)
+        if (elenco.http !== 200) return { esito: 'illeggibile', http: elenco.http, corpo: pulito(elenco.testo).slice(0, 300) }
+        const ultimo = (JSON.parse(elenco.testo)?.workflow_runs ?? []).find(
+            (g) => typeof g?.display_title === 'string' && g.display_title.includes(TITOLO_DA_FUORI),
+        )
+        if (!ultimo) return { esito: 'nessun-giro' }
+        const giro = { id: ultimo.id, conclusione: ultimo.conclusion, creato: ultimo.created_at }
+        if (!CONCLUSIONI_DA_CONTROLLARE.has(ultimo.conclusion)) return { esito: 'ok', giro }
+        const lavori = await leggi(`https://api.github.com/repos/${REPO}/actions/runs/${ultimo.id}/jobs`)
+        if (lavori.http !== 200) return { esito: 'illeggibile', http: lavori.http, corpo: pulito(lavori.testo).slice(0, 300) }
+        const jobs = JSON.parse(lavori.testo)?.jobs ?? []
+        if (jobs.some((j) => Array.isArray(j?.steps) && j.steps.length > 0)) return { esito: 'ok', giro }
+        return { esito: 'rifiutato', giro, messaggio: await leggiAnnotazione(jobs, leggi, pulito) }
+    } catch (err) {
+        return { esito: 'illeggibile', http: null, corpo: pulito(err instanceof Error ? err.name + ': ' + err.message : String(err)).slice(0, 300) }
+    }
+}
+
+/**
+ * Il «perché» di un giro rifiutato: la prima annotazione `failure` del primo job che ne ha una. Il testo
+ * è di GitHub (niente dati delle famiglie), ma passa comunque da `senzaSegreto` e si taglia a 300.
+ * Un testo che deve restare uguale da un giro all'altro: finisce nella chiave dell'email.
+ */
+async function leggiAnnotazione(jobs, leggi, pulito) {
+    if (jobs.length === 0) return 'GitHub non ha creato nessun job (nessuna annotazione da leggere)'
+    let ultimoErrore = 'nessuna annotazione'
+    for (const job of jobs) {
+        const url = typeof job?.check_run_url === 'string' ? job.check_run_url : ''
+        if (!url.startsWith('https://api.github.com/')) {
+            ultimoErrore = 'annotazione non leggibile: indirizzo del check run mancante o non di api.github.com'
+            continue
+        }
+        try {
+            const r = await leggi(`${url}/annotations`)
+            if (r.http !== 200) {
+                ultimoErrore = `annotazione non leggibile: HTTP ${r.http} ${pulito(r.testo).replace(/\s+/g, ' ').slice(0, 150)}`
+                continue
+            }
+            const note = JSON.parse(r.testo)
+            const nota = Array.isArray(note)
+                ? (note.find((n) => n?.annotation_level === 'failure' && n?.message) ?? note.find((n) => n?.message))
+                : null
+            if (nota) return pulito(String(nota.message)).replace(/\s+/g, ' ').trim().slice(0, 300)
+        } catch (err) {
+            ultimoErrore = `annotazione non leggibile: ${pulito(err instanceof Error ? err.name : String(err))}`
+        }
+    }
+    return ultimoErrore
+}
+
+/** Una riga per giro sul controllo dei giri: anche quando va tutto bene, se no «nessun log» non dice niente. */
+function scriviControllo(actions, log) {
+    if (actions.esito === 'ok') {
+        log(`monitor-actions: esito=ok giro=${actions.giro.id} conclusione=${actions.giro.conclusione}`)
+    } else if (actions.esito === 'nessun-giro') {
+        log('monitor-actions: esito=nessun-giro: fra gli ultimi giri finiti del campanello nessuno è partito da Cloudflare')
+    } else if (actions.esito === 'rifiutato') {
+        const g = actions.giro
+        console.error(`monitor-actions: esito=rifiutato giro=${g.id} conclusione=${g.conclusione} creato=${g.creato} passi=0: ${actions.messaggio}`)
+    } else {
+        console.error(`monitor-actions: esito=illeggibile HTTP ${actions.http ?? '-'} ${actions.corpo}`)
+    }
+}
+
+/**
+ * L'email «GitHub Actions non esegue il campanello». UNA AL GIORNO, non una per ora, per tre ragioni:
+ *   · il rischio grave, il sito giù mentre il campanello è cieco, ha già la sua email ogni ora
+ *     («Sito giù e campanello NON partito»: `giro` conta il rifiuto come campanello non partito);
+ *   · col sito sano restano fermi il backup (uno per notte) e la CI: cose da sistemare in giornata,
+ *     non ogni ora. Il 25/11 sarebbero state 18 email uguali, e un allarme che si ripete si impara a
+ *     ignorarlo;
+ *   · la finestra di Resend sulla stessa chiave è di 24 ore.
+ * Nella chiave c'è anche l'impronta del messaggio: un motivo diverso nello stesso giorno è una notizia
+ * nuova e parte, mentre lo stesso testo con la stessa chiave non si rispedisce (e un testo DIVERSO con
+ * la stessa chiave Resend lo rifiuterebbe con 409). Per lo stesso motivo nel testo non c'è il numero
+ * del giro, che cambia ogni quarto d'ora: quello sta nel log.
+ */
+async function avvisaActionsFerme({ actions, quando, segreti, fetchImpl, log }) {
+    const iso = quando.toISOString()
+    return avvisaPerEmail({
+        segreti,
+        chiave: chiaveIdempotenza('actions', quando, actions.messaggio),
+        oggetto: 'GitHub Actions non esegue il campanello',
+        introHtml:
+            'GitHub accetta i lanci del monitor esterno ma non li esegue: l’ultimo campanello partito da Cloudflare è ' +
+            `finito «${escapeHtml(actions.giro.conclusione)}» senza un solo passo. GitHub dice: ` +
+            `<code>${escapeHtml(actions.messaggio)}</code>. Finché dura, il campanello non guarda il sito, e sulle ` +
+            'stesse Actions sono fermi anche il backup notturno e la CI. Se il sito cade, il monitor manda comunque ' +
+            'l’email «Sito giù e campanello NON partito», una per ora. Cosa fare: <code>docs/cicd.md</code>, ' +
+            'sezione «Monitor esterno».',
+        link: LINK_GIRI_CAMPANELLO,
+        quando: `il ${iso.slice(0, 10)} (UTC)`,
+        fetchImpl,
+        log,
+    })
+}
+
+/**
  * Un giro. `quando` = l'ora PROGRAMMATA del cron (non quella effettiva): il battito cade sui quarti
  * d'ora anche se Cloudflare parte con qualche secondo di ritardo.
- * Restituisce `{ vivo, battito, suonato, esito, email }` e scrive UNA riga di log (due se parte
- * l'email del secondo canale).
+ * Restituisce `{ vivo, battito, suonato, esito, email, actions, emailActions }` e scrive due righe di
+ * log (il campanello e il controllo dei giri), più una per ogni email del secondo canale.
+ *   · `suonato` = GitHub ha accettato il lancio (204), non che il giro sia stato eseguito;
+ *   · `actions` = l'ultimo giro del campanello partito da qui (`guardaUltimoGiro`);
+ *   · `email` = l'email del sito giù, `emailActions` = quella delle Actions ferme (null quando non serve).
  */
 export async function giro({ quando, token, segreti = {}, fetchImpl = fetch, dormi = attendi, log = (r) => console.log(r) }) {
     const vivo = await leggiVivo({ fetchImpl, dormi })
     const battito = quando.getUTCMinutes() % MINUTI_BATTITO === 0
+    const perche = vivo.ok ? 'battito' : `vivo NON ok (HTTP ${vivo.http ?? 'nessuna risposta'}: ${vivo.motivo})`
+    let esito = null
     if (vivo.ok && !battito) {
         log(`monitor: vivo ok, nessun giro del campanello`)
-        return { vivo, battito, suonato: false, esito: null, email: null }
+    } else {
+        esito = await suonaCampanello({ token, fetchImpl })
+        if (esito.ok) {
+            log(`monitor: ${perche} → campanello partito`)
+        } else {
+            // Il corpo del rifiuto va nel log intero (senza il token, che non è nel corpo): è il «perché».
+            console.error(`monitor: ${perche} → campanello NON partito: HTTP ${esito.http ?? '-'} ${esito.corpo}`)
+        }
     }
-    const esito = await suonaCampanello({ token, fetchImpl })
-    const perche = vivo.ok ? 'battito' : `vivo NON ok (HTTP ${vivo.http ?? 'nessuna risposta'}: ${vivo.motivo})`
-    if (esito.ok) {
-        log(`monitor: ${perche} → campanello partito`)
-        return { vivo, battito, suonato: true, esito, email: null }
-    }
-    // Il corpo del rifiuto va nel log intero (senza il token, che non è nel corpo): è il «perché».
-    console.error(`monitor: ${perche} → campanello NON partito: HTTP ${esito.http ?? '-'} ${esito.corpo}`)
-    // Un battito rifiutato col sito sano NON manda email: lo vede il campanello stesso
+    const suonato = esito?.ok === true
+    // A OGNI giro, anche senza lancio: un 204 non dice che GitHub eseguirà il giro (vedi in testa).
+    const actions = await guardaUltimoGiro({ token, fetchImpl })
+    scriviControllo(actions, log)
+    const rifiutato = actions.esito === 'rifiutato'
+    const emailActions = rifiutato ? await avvisaActionsFerme({ actions, quando, segreti, fetchImpl, log }) : null
+    const base = { vivo, battito, suonato, esito, actions, emailActions }
+    // Sito sano: nessuna email del vivo. Un battito rifiutato lo vede il campanello stesso
     // (`monitor-esterno-muto`), e un token scaduto lo dice comunque l'email del backup delle 02:23.
-    if (vivo.ok) return { vivo, battito, suonato: false, esito, email: null }
-    // IL SECONDO CANALE (T12): sito giù E campanello fermo = l'allarme normale non arriverà.
-    // Un'email per ora (la chiave di Resend), con un testo che dentro l'ora NON cambia: a una stessa
-    // chiave con un messaggio diverso Resend risponde 409. Il guasto preciso è nella riga qui sopra.
+    if (vivo.ok) return { ...base, email: null }
+    // Sito giù e campanello partito davvero: l'allarme lo manda il campanello.
+    if (suonato && !rifiutato) return { ...base, email: null }
+    if (suonato) {
+        console.error(
+            `monitor: ${perche} → campanello accettato, ma GitHub non esegue i giri (l'ultimo, ${actions.giro.id}, ` +
+                'è finito senza passi): conta come NON partito',
+        )
+    }
+    // IL SECONDO CANALE (T12): sito giù E campanello fermo (rifiutato, o accettato e non eseguito) =
+    // l'allarme normale non arriverà. Un'email per ora (la chiave di Resend), con un testo che dentro
+    // l'ora NON cambia: a una stessa chiave con un messaggio diverso Resend risponde 409. Il guasto
+    // preciso è nelle righe qui sopra.
     const iso = quando.toISOString()
     const email = await avvisaPerEmail({
         segreti,
         chiave: chiaveIdempotenza('vivo', quando),
         oggetto: 'Sito giù e campanello NON partito',
         introHtml:
-            'Il monitor esterno vede il sito giù e non riesce a far partire il campanello di GitHub: la ' +
-            'segnalazione e l’email normali NON arriveranno. Il motivo esatto è nei log del Worker ' +
-            '<code>kidville-monitor-esterno</code> (pannello Cloudflare → Workers → Logs).',
+            'Il monitor esterno vede il sito giù e il campanello di GitHub non parte: GitHub rifiuta il lancio, ' +
+            'oppure lo accetta e poi non esegue il giro. La segnalazione e l’email normali NON arriveranno. Il ' +
+            'motivo esatto è nei log del Worker <code>kidville-monitor-esterno</code> (pannello Cloudflare → ' +
+            'Workers → Logs).',
         link: LINK_GIRI_CAMPANELLO,
         quando: `dalle ${iso.slice(11, 13)}:00 UTC del ${iso.slice(0, 10)}`,
         fetchImpl,
         log,
     })
-    return { vivo, battito, suonato: false, esito, email }
+    return { ...base, email }
 }
 
 /**
@@ -227,11 +393,26 @@ export async function lanciaBackup({ token, fetchImpl = fetch }) {
  * La chiave d'idempotenza di Resend per un'email del Worker: SOLO codici e date, mai un indirizzo.
  *   · 'backup' → una per notte (`kidville-backup-non-partito-AAAA-MM-GG`);
  *   · 'vivo'   → una per ora (`kidville-vivo-giu-AAAA-MM-GGTHH`): il cron gira ogni 5 minuti, e un
- *     sito giù per un'ora deve fare UNA email, non dodici.
+ *     sito giù per un'ora deve fare UNA email, non dodici;
+ *   · 'actions' → una per giorno E per motivo (`kidville-actions-ferme-AAAA-MM-GG-<impronta di testo>`):
+ *     perché al giorno, lo spiega `avvisaActionsFerme`. Il testo è il messaggio di GitHub, nella
+ *     chiave entra solo la sua impronta.
  */
-export function chiaveIdempotenza(tipo, quando) {
+export function chiaveIdempotenza(tipo, quando, testo = '') {
     const iso = quando.toISOString()
-    return tipo === 'backup' ? `kidville-backup-non-partito-${iso.slice(0, 10)}` : `kidville-vivo-giu-${iso.slice(0, 13)}`
+    if (tipo === 'backup') return `kidville-backup-non-partito-${iso.slice(0, 10)}`
+    if (tipo === 'actions') return `kidville-actions-ferme-${iso.slice(0, 10)}-${impronta(testo)}`
+    return `kidville-vivo-giu-${iso.slice(0, 13)}`
+}
+
+/** FNV-1a a 32 bit in esadecimale: otto caratteri stabili per un testo, per una chiave corta. */
+function impronta(testo) {
+    let h = 0x811c9dc5
+    for (let i = 0; i < testo.length; i++) {
+        h ^= testo.charCodeAt(i)
+        h = Math.imul(h, 0x01000193)
+    }
+    return (h >>> 0).toString(16).padStart(8, '0')
 }
 
 /**

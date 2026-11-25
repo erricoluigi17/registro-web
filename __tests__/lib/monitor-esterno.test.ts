@@ -5,15 +5,18 @@ import { join } from 'node:path'
 import worker, {
     CRON_BACKUP,
     LINK_GIRI_BACKUP,
+    LINK_GIRI_CAMPANELLO,
     MINUTI_BATTITO,
     ORIGINE,
     REPO,
+    URL_GIRI_CAMPANELLO,
     URL_VIVO,
     WORKFLOW,
     WORKFLOW_BACKUP,
     chiaveIdempotenza,
     giro,
     giroBackup,
+    guardaUltimoGiro,
     lavoroDelCron,
     leggiVivo,
     suonaCampanello,
@@ -68,6 +71,59 @@ const NOTTE = new Date('2026-10-21T02:23:00Z')
 const TOKEN = 'ghtok-di-prova'
 const SPENTO = { status: 422, testo: '{"message":"Cannot trigger a \'workflow_dispatch\' on a disabled workflow"}' }
 const CREDENZIALI = { status: 401, testo: '{"message":"Bad credentials"}' }
+// I giri del campanello come li restituisce GitHub: forme copiate dai giri VERI del 25/11/2026
+// (`45702607280`, rifiutato alle 21:15 coi minuti finiti; `45704924584`, riuscito alle 21:30).
+const GIRI = URL_GIRI_CAMPANELLO
+const ID_RIFIUTATO = 45702607280
+const ID_RIUSCITO = 45704924584
+const jobsDi = (id: number) => `https://api.github.com/repos/${REPO}/actions/runs/${id}/jobs`
+const CHECK_RUN = `https://api.github.com/repos/${REPO}/check-runs/139516333609`
+const NOTE = `${CHECK_RUN}/annotations`
+const MESSAGGIO_MINUTI =
+    "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings"
+function giroCampanello(campi: Record<string, unknown>) {
+    return {
+        id: ID_RIUSCITO,
+        name: 'Campanello (sito, salute, backup)',
+        display_title: 'Campanello (da Cloudflare)',
+        event: 'workflow_dispatch',
+        status: 'completed',
+        conclusion: 'success',
+        created_at: '2026-11-25T21:30:11Z',
+        ...campi,
+    }
+}
+const elenco = (...giri: Record<string, unknown>[]) => ({
+    status: 200,
+    testo: JSON.stringify({ total_count: giri.length, workflow_runs: giri }),
+})
+const lavori = (...jobs: Record<string, unknown>[]) => ({ status: 200, testo: JSON.stringify({ total_count: jobs.length, jobs }) })
+const JOB_SENZA_PASSI = {
+    id: 139516333609,
+    name: 'Guarda il sito e il backup',
+    status: 'completed',
+    conclusion: 'failure',
+    steps: [],
+    runner_name: '',
+    check_run_url: CHECK_RUN,
+}
+const NOTA_MINUTI = {
+    status: 200,
+    testo: JSON.stringify([{ path: '.github', start_line: 1, annotation_level: 'failure', title: '', message: MESSAGGIO_MINUTI, raw_details: '' }]),
+}
+const GIRI_SANI = elenco(giroCampanello({ id: ID_RIUSCITO, conclusion: 'success' }))
+/** Il 25/11: l'ultimo giro partito da Cloudflare è finito `failure` con un job senza passi. */
+const ACTIONS_FERME: Record<string, Risposta[]> = {
+    [GIRI]: [elenco(giroCampanello({ id: ID_RIFIUTATO, conclusion: 'failure', created_at: '2026-11-25T21:15:11Z' }))],
+    [jobsDi(ID_RIFIUTATO)]: [lavori(JOB_SENZA_PASSI)],
+    [NOTE]: [NOTA_MINUTI],
+}
+
+/** Un `fetch` finto per un giro del monitor: se il test non dice altro, l'ultimo giro del campanello è riuscito. */
+function fetchGiro(per: Record<string, Risposta[]>) {
+    return fetchFinto({ [GIRI]: [GIRI_SANI], ...per })
+}
+
 /** Il mittente del campanello, letto dal suo sorgente: il Worker deve usare lo stesso. */
 const MITTENTE_CAMPANELLO = /const MITTENTE = '([^']+)'/.exec(
     readFileSync(join(process.cwd(), 'scripts/campanello/allarme.mjs'), 'utf8'),
@@ -102,7 +158,7 @@ describe('il monitor esterno', () => {
     })
 
     it('vivo sano fuori dal battito: NON fa partire il campanello', async () => {
-        const f = fetchFinto({ [URL_VIVO]: [OK] })
+        const f = fetchGiro({ [URL_VIVO]: [OK] })
 
         const { esito } = await unGiro(f, FUORI_BATTITO)
 
@@ -112,7 +168,7 @@ describe('il monitor esterno', () => {
     })
 
     it('vivo sano SUL battito: fa partire il campanello con origine=cloudflare su main', async () => {
-        const f = fetchFinto({ [URL_VIVO]: [OK], [DISPATCH]: [PARTITO] })
+        const f = fetchGiro({ [URL_VIVO]: [OK], [DISPATCH]: [PARTITO] })
 
         const { esito, log } = await unGiro(f, SUL_BATTITO)
 
@@ -124,7 +180,7 @@ describe('il monitor esterno', () => {
     })
 
     it('vivo giù due volte fuori dal battito: fa partire SUBITO il campanello, dopo 20 s di attesa fra i tentativi', async () => {
-        const f = fetchFinto({ [URL_VIVO]: [GIU], [DISPATCH]: [PARTITO] })
+        const f = fetchGiro({ [URL_VIVO]: [GIU], [DISPATCH]: [PARTITO] })
 
         const { esito, dormi, log } = await unGiro(f, FUORI_BATTITO)
 
@@ -135,7 +191,7 @@ describe('il monitor esterno', () => {
     })
 
     it('uno scatto isolato (503 poi 200) non sveglia nessuno', async () => {
-        const f = fetchFinto({ [URL_VIVO]: [GIU, OK] })
+        const f = fetchGiro({ [URL_VIVO]: [GIU, OK] })
 
         const { esito } = await unGiro(f, FUORI_BATTITO)
 
@@ -144,7 +200,7 @@ describe('il monitor esterno', () => {
     })
 
     it('una rete che non risponde conta come vivo giù', async () => {
-        const f = fetchFinto({ [URL_VIVO]: [new Error('timeout')], [DISPATCH]: [PARTITO] })
+        const f = fetchGiro({ [URL_VIVO]: [new Error('timeout')], [DISPATCH]: [PARTITO] })
 
         const { esito } = await unGiro(f, FUORI_BATTITO)
 
@@ -154,7 +210,7 @@ describe('il monitor esterno', () => {
     })
 
     it('un rifiuto di GitHub finisce nel log CON il corpo (un 401 senza corpo non dice che il token è scaduto)', async () => {
-        const f = fetchFinto({ [URL_VIVO]: [GIU], [DISPATCH]: [{ status: 401, testo: '{"message":"Bad credentials"}' }] })
+        const f = fetchGiro({ [URL_VIVO]: [GIU], [DISPATCH]: [{ status: 401, testo: '{"message":"Bad credentials"}' }] })
 
         const { esito, righeErrore } = await unGiro(f, FUORI_BATTITO)
 
@@ -164,7 +220,7 @@ describe('il monitor esterno', () => {
     })
 
     it('senza token non chiama GitHub e lo dice', async () => {
-        const f = fetchFinto({ [URL_VIVO]: [GIU] })
+        const f = fetchGiro({ [URL_VIVO]: [GIU] })
 
         const { esito, righeErrore } = await unGiro(f, FUORI_BATTITO, '')
 
@@ -267,13 +323,25 @@ describe('scheduled: ogni cron fa il suo lavoro', () => {
         expect(f.a(URL_VIVO)).toHaveLength(0)
     })
 
-    it('il cron dei 5 minuti legge il vivo e non lancia il backup', async () => {
-        const f = fetchFinto({ [URL_VIVO]: [OK] })
+    it('il cron dei 5 minuti legge il vivo e l\'ultimo giro del campanello, e non lancia il backup', async () => {
+        const f = fetchGiro({ [URL_VIVO]: [OK] })
 
         expect(await scatta('*/5 * * * *', FUORI_BATTITO.getTime(), f)).toBe(1)
 
         expect(f.a(URL_VIVO)).toHaveLength(1)
+        expect(f.a(GIRI)).toHaveLength(1)
         expect(f.a(DISPATCH_BACKUP)).toHaveLength(0)
+    })
+
+    it('il cron dei 5 minuti con le Actions ferme: l\'email parte coi segreti del Worker', async () => {
+        const env = { GITHUB_TOKEN_CAMPANELLO: TOKEN, RESEND_API_KEY: 're_prova', SENTINELLA_DESTINATARI: 'a@esempio.test' }
+        const f = fetchFinto({ [URL_VIVO]: [OK], ...ACTIONS_FERME, [RESEND]: [ACCETTATA] })
+
+        expect(await scatta('*/5 * * * *', Date.parse('2026-11-25T21:20:00Z'), f, env)).toBe(1)
+
+        expect(f.a(GIRI)[0].auth).toBe(`Bearer ${TOKEN}`)
+        expect(f.a(RESEND).map((c) => c.idem)).toEqual([chiaveIdempotenza('actions', new Date('2026-11-25T21:20:00Z'), MESSAGGIO_MINUTI)])
+        expect(f.a(RESEND)[0].auth).toBe('Bearer re_prova')
     })
 
     it('backup rifiutato alle 02:23 e sito giù alle 02:25: un cron non ferma l\'altro, e i segreti del Worker arrivano alle due email', async () => {
@@ -283,6 +351,8 @@ describe('scheduled: ogni cron fa il suo lavoro', () => {
             [WF_BACKUP]: [CREDENZIALI],
             [URL_VIVO]: [GIU],
             [DISPATCH]: [CREDENZIALI],
+            // Stesso token scaduto: anche l'elenco dei giri risponde 401 (illeggibile, nessuna email in più).
+            [GIRI]: [CREDENZIALI],
             [RESEND]: [ACCETTATA],
         })
 
@@ -548,15 +618,23 @@ describe('chiaveIdempotenza', () => {
         expect(chiaveIdempotenza('vivo', new Date('2026-10-19T10:05:00Z'))).toBe('kidville-vivo-giu-2026-10-19T10')
         expect(chiaveIdempotenza('vivo', new Date('2026-10-19T10:55:00Z'))).toBe('kidville-vivo-giu-2026-10-19T10')
         expect(chiaveIdempotenza('vivo', new Date('2026-10-19T11:00:00Z'))).toBe('kidville-vivo-giu-2026-10-19T11')
-        for (const k of [chiaveIdempotenza('backup', NOTTE), chiaveIdempotenza('vivo', NOTTE)]) {
+        for (const k of [chiaveIdempotenza('backup', NOTTE), chiaveIdempotenza('vivo', NOTTE), chiaveIdempotenza('actions', NOTTE, MESSAGGIO_MINUTI)]) {
             expect(k).toMatch(/^[A-Za-z0-9:_.-]{1,256}$/)
         }
+    })
+
+    it('Actions ferme: una per giorno e per motivo (stesso giorno e stesso messaggio = stessa chiave)', () => {
+        const mattina = chiaveIdempotenza('actions', new Date('2026-11-25T03:05:00Z'), MESSAGGIO_MINUTI)
+        expect(mattina).toMatch(/^kidville-actions-ferme-2026-11-25-[0-9a-f]{8}$/)
+        expect(chiaveIdempotenza('actions', new Date('2026-11-25T21:15:00Z'), MESSAGGIO_MINUTI)).toBe(mattina)
+        expect(chiaveIdempotenza('actions', new Date('2026-11-26T03:05:00Z'), MESSAGGIO_MINUTI)).toMatch(/^kidville-actions-ferme-2026-11-26-/)
+        expect(chiaveIdempotenza('actions', new Date('2026-11-25T03:05:00Z'), 'un altro motivo')).not.toBe(mattina)
     })
 })
 
 describe('il secondo canale quando il sito è giù', () => {
     it('sito giù E campanello rifiutato: parte l\'email, con la chiave dell\'ora', async () => {
-        const f = fetchFinto({ [URL_VIVO]: [GIU], [DISPATCH]: [CREDENZIALI], [RESEND]: [ACCETTATA] })
+        const f = fetchGiro({ [URL_VIVO]: [GIU], [DISPATCH]: [CREDENZIALI], [RESEND]: [ACCETTATA] })
 
         const { esito, log } = await unGiro(f, FUORI_BATTITO, 'tok', SEGRETI)
 
@@ -569,7 +647,7 @@ describe('il secondo canale quando il sito è giù', () => {
     })
 
     it('dentro la stessa ora il testo non cambia anche se cambia il guasto (stessa chiave, messaggio diverso = 409)', async () => {
-        const f = fetchFinto({
+        const f = fetchGiro({
             [URL_VIVO]: [GIU, GIU, { status: 502, testo: 'Bad gateway' }],
             [DISPATCH]: [CREDENZIALI],
             [RESEND]: [ACCETTATA],
@@ -584,7 +662,7 @@ describe('il secondo canale quando il sito è giù', () => {
     })
 
     it('battito rifiutato col sito sano: nessuna email (lo vede `monitor-esterno-muto`)', async () => {
-        const f = fetchFinto({ [URL_VIVO]: [OK], [DISPATCH]: [CREDENZIALI] })
+        const f = fetchGiro({ [URL_VIVO]: [OK], [DISPATCH]: [CREDENZIALI] })
 
         const { esito } = await unGiro(f, SUL_BATTITO, 'tok', SEGRETI)
 
@@ -594,12 +672,199 @@ describe('il secondo canale quando il sito è giù', () => {
     })
 
     it('sito giù e campanello partito: nessuna email dal Worker (l\'allarme lo manda il campanello)', async () => {
-        const f = fetchFinto({ [URL_VIVO]: [GIU], [DISPATCH]: [PARTITO] })
+        const f = fetchGiro({ [URL_VIVO]: [GIU], [DISPATCH]: [PARTITO] })
 
         const { esito } = await unGiro(f, FUORI_BATTITO, 'tok', SEGRETI)
 
         expect(esito.suonato).toBe(true)
         expect(esito.email).toBeNull()
         expect(f.a(RESEND)).toHaveLength(0)
+    })
+})
+
+describe('il giro accettato e NON eseguito (25/11/2026: minuti di Actions finiti)', () => {
+    // Le 10:05 del 25/11: fuori dal battito, quindi nessun lancio; il controllo dei giri si fa lo stesso.
+    const MATTINA = new Date('2026-11-25T10:05:00Z')
+    const CHIAVE_MINUTI = chiaveIdempotenza('actions', MATTINA, MESSAGGIO_MINUTI)
+
+    it('sito sano, ultimo giro finito «failure» senza passi: l\'email delle Actions ferme col messaggio di GitHub', async () => {
+        const f = fetchFinto({ [URL_VIVO]: [OK], ...ACTIONS_FERME, [RESEND]: [ACCETTATA] })
+
+        const { esito, log, righeErrore } = await unGiro(f, MATTINA, TOKEN, SEGRETI)
+
+        expect(f.a(DISPATCH)).toHaveLength(0)
+        expect(esito.actions).toMatchObject({ esito: 'rifiutato', giro: { id: ID_RIFIUTATO, conclusione: 'failure' } })
+        expect(righeErrore.join(' ')).toContain(`monitor-actions: esito=rifiutato giro=${ID_RIFIUTATO} conclusione=failure`)
+        expect(righeErrore.join(' ')).toContain('passi=0: The job was not started because recent account payments have failed')
+        // Le tre letture vanno a GitHub col token, in GET.
+        for (const u of [GIRI, jobsDi(ID_RIFIUTATO), NOTE]) {
+            expect(f.a(u).map((c) => [c.verbo, c.auth])).toEqual([['GET', `Bearer ${TOKEN}`]])
+        }
+        const [email] = f.a(RESEND)
+        expect(f.a(RESEND)).toHaveLength(1)
+        expect(email.idem).toBe(CHIAVE_MINUTI)
+        const corpo = JSON.parse(email.corpo!)
+        expect(corpo.subject).toBe('GitHub Actions non esegue il campanello')
+        expect(corpo.html).toContain('recent account payments have failed')
+        expect(corpo.html).toContain('Billing &amp; plans')
+        expect(corpo.html).toContain(LINK_GIRI_CAMPANELLO)
+        expect(corpo.html).not.toContain(TOKEN)
+        expect(esito.emailActions?.ok).toBe(true)
+        // Col sito sano nessuna email del vivo.
+        expect(esito.email).toBeNull()
+        expect(log.mock.calls.map((c) => String(c[0])).join(' ')).toContain(`monitor-email: esito=accettata chiave=${CHIAVE_MINUTI}`)
+    })
+
+    it('sito GIÙ, lancio accettato (204) ma GitHub non esegue i giri: parte ANCHE l\'email oraria del sito giù', async () => {
+        const f = fetchFinto({ [URL_VIVO]: [GIU], [DISPATCH]: [PARTITO], ...ACTIONS_FERME, [RESEND]: [ACCETTATA] })
+
+        const { esito, righeErrore } = await unGiro(f, MATTINA, TOKEN, SEGRETI)
+
+        expect(esito.suonato).toBe(true)
+        expect(f.a(RESEND).map((c) => c.idem)).toEqual([CHIAVE_MINUTI, 'kidville-vivo-giu-2026-11-25T10'])
+        expect(JSON.parse(f.a(RESEND)[1].corpo!).subject).toBe('Sito giù e campanello NON partito')
+        expect(esito.email?.ok).toBe(true)
+        expect(righeErrore.join(' ')).toContain(`campanello accettato, ma GitHub non esegue i giri (l'ultimo, ${ID_RIFIUTATO}`)
+    })
+
+    it('un «failure» CON dei passi è un giro vero finito male: nessuna email (il sito l\'ha guardato)', async () => {
+        const conPassi = { ...JOB_SENZA_PASSI, steps: [{ name: 'Set up job', status: 'completed', conclusion: 'success', number: 1 }] }
+        const f = fetchFinto({ [URL_VIVO]: [OK], ...ACTIONS_FERME, [jobsDi(ID_RIFIUTATO)]: [lavori(conPassi)] })
+
+        const { esito, log } = await unGiro(f, MATTINA, TOKEN, SEGRETI)
+
+        expect(esito.actions).toMatchObject({ esito: 'ok', giro: { id: ID_RIFIUTATO, conclusione: 'failure' } })
+        expect(f.a(NOTE)).toHaveLength(0)
+        expect(f.a(RESEND)).toHaveLength(0)
+        expect(log.mock.calls.map((c) => String(c[0])).join(' ')).toContain(`monitor-actions: esito=ok giro=${ID_RIFIUTATO} conclusione=failure`)
+    })
+
+    it('ultimo giro riuscito: nessuna email, nessuna lettura dei job, e il successo si scrive', async () => {
+        const f = fetchGiro({ [URL_VIVO]: [OK] })
+
+        const { esito, log, righeErrore } = await unGiro(f, MATTINA, TOKEN, SEGRETI)
+
+        expect(esito.actions.esito).toBe('ok')
+        expect(f.a(jobsDi(ID_RIUSCITO))).toHaveLength(0)
+        expect(f.a(RESEND)).toHaveLength(0)
+        expect(esito.emailActions).toBeNull()
+        expect(righeErrore).toEqual([])
+        expect(log.mock.calls.map((c) => String(c[0]))).toEqual([
+            'monitor: vivo ok, nessun giro del campanello',
+            `monitor-actions: esito=ok giro=${ID_RIUSCITO} conclusione=success`,
+        ])
+    })
+
+    it('conta il giro partito da Cloudflare, non quello lanciato a mano', async () => {
+        // Più recente un giro a mano riuscito, poi il giro da Cloudflare rifiutato: è questo che conta.
+        const aManoPrima = fetchFinto({
+            ...ACTIONS_FERME,
+            [GIRI]: [elenco(giroCampanello({ id: 1, display_title: 'Campanello' }), giroCampanello({ id: ID_RIFIUTATO, conclusion: 'failure' }))],
+        })
+        expect(await guardaUltimoGiro({ token: TOKEN, fetchImpl: aManoPrima.impl })).toMatchObject({ esito: 'rifiutato', giro: { id: ID_RIFIUTATO } })
+
+        // Più recente un giro a mano rifiutato, poi quello da Cloudflare riuscito: tutto bene, e i job del giro a mano non si leggono.
+        const aManoRifiutato = fetchFinto({
+            [GIRI]: [elenco(giroCampanello({ id: 2, display_title: 'Campanello', conclusion: 'failure' }), giroCampanello({ id: ID_RIUSCITO }))],
+        })
+        expect(await guardaUltimoGiro({ token: TOKEN, fetchImpl: aManoRifiutato.impl })).toMatchObject({ esito: 'ok', giro: { id: ID_RIUSCITO } })
+        expect(aManoRifiutato.a(jobsDi(2))).toHaveLength(0)
+    })
+
+    it('stesso giorno, giri diversi, stesso motivo: stessa chiave e STESSO testo (testo diverso = 409 di Resend)', async () => {
+        const ALTRO = 45710000000
+        const f = fetchFinto({
+            [URL_VIVO]: [OK],
+            ...ACTIONS_FERME,
+            [GIRI]: [
+                elenco(giroCampanello({ id: ID_RIFIUTATO, conclusion: 'failure' })),
+                elenco(giroCampanello({ id: ALTRO, conclusion: 'failure', created_at: '2026-11-25T18:30:11Z' })),
+            ],
+            [jobsDi(ALTRO)]: [lavori(JOB_SENZA_PASSI)],
+            [RESEND]: [ACCETTATA],
+        })
+
+        await unGiro(f, MATTINA, TOKEN, SEGRETI)
+        await unGiro(f, new Date('2026-11-25T18:40:00Z'), TOKEN, SEGRETI)
+
+        const [prima, seconda] = f.a(RESEND)
+        expect(f.a(jobsDi(ALTRO))).toHaveLength(1)
+        expect(seconda.idem).toBe(prima.idem)
+        expect(seconda.corpo).toBe(prima.corpo)
+        expect(seconda.corpo).not.toContain(String(ALTRO))
+    })
+
+    it('annotazione non leggibile (403): l\'email parte lo stesso e dice perché', async () => {
+        const f = fetchFinto({
+            [URL_VIVO]: [OK],
+            ...ACTIONS_FERME,
+            [NOTE]: [{ status: 403, testo: '{"message":"Resource not accessible by personal access token"}' }],
+            [RESEND]: [ACCETTATA],
+        })
+
+        const { esito } = await unGiro(f, MATTINA, TOKEN, SEGRETI)
+
+        expect(esito.actions.esito).toBe('rifiutato')
+        expect(esito.actions.messaggio).toMatch(/^annotazione non leggibile: HTTP 403 .*Resource not accessible/)
+        expect(JSON.parse(f.a(RESEND)[0].corpo!).html).toContain('annotazione non leggibile: HTTP 403')
+    })
+
+    it('«startup_failure» senza nessun job (un campanello.yml che GitHub non legge): rifiutato anche questo', async () => {
+        const f = fetchFinto({
+            [GIRI]: [elenco(giroCampanello({ id: ID_RIFIUTATO, conclusion: 'startup_failure' }))],
+            [jobsDi(ID_RIFIUTATO)]: [lavori()],
+        })
+
+        expect(await guardaUltimoGiro({ token: TOKEN, fetchImpl: f.impl })).toEqual({
+            esito: 'rifiutato',
+            giro: { id: ID_RIFIUTATO, conclusione: 'startup_failure', creato: '2026-11-25T21:30:11Z' },
+            messaggio: 'GitHub non ha creato nessun job (nessuna annotazione da leggere)',
+        })
+    })
+
+    it('un check run che non è di api.github.com: il token non ci va, e il rifiuto vale lo stesso', async () => {
+        const altrove = 'https://altrove.esempio.test/check-runs/1'
+        const f = fetchFinto({ ...ACTIONS_FERME, [jobsDi(ID_RIFIUTATO)]: [lavori({ ...JOB_SENZA_PASSI, check_run_url: altrove })] })
+
+        const esito = await guardaUltimoGiro({ token: TOKEN, fetchImpl: f.impl })
+
+        expect(f.chiamate.filter((c) => c.url.startsWith(altrove))).toHaveLength(0)
+        expect(esito).toMatchObject({ esito: 'rifiutato', messaggio: expect.stringContaining('non di api.github.com') })
+    })
+
+    it('GitHub non dà l\'elenco dei giri (401): lo scrive col corpo e senza il token, nessuna email delle Actions', async () => {
+        const eco = { status: 401, testo: `{"message":"Bad credentials","eco":"Bearer ${TOKEN}"}` }
+        const f = fetchFinto({ [URL_VIVO]: [OK], [GIRI]: [eco] })
+
+        const { esito, righeErrore } = await unGiro(f, MATTINA, TOKEN, SEGRETI)
+
+        expect(esito.actions).toMatchObject({ esito: 'illeggibile', http: 401 })
+        expect(righeErrore.join(' ')).toMatch(/monitor-actions: esito=illeggibile HTTP 401 .*Bad credentials/)
+        expect(righeErrore.join(' ')).not.toContain(TOKEN)
+        expect(f.a(RESEND)).toHaveLength(0)
+    })
+
+    it('una risposta che non è JSON o una rete che cade: illeggibile, senza lanciare', async () => {
+        for (const r of [{ status: 200, testo: '<html>manutenzione</html>' }, new Error('timeout')]) {
+            const f = fetchFinto({ [GIRI]: [r] })
+            expect(await guardaUltimoGiro({ token: TOKEN, fetchImpl: f.impl })).toMatchObject({ esito: 'illeggibile', http: null })
+        }
+    })
+
+    it('nessun giro partito da Cloudflare fra gli ultimi: lo dice, nessuna email', async () => {
+        const f = fetchFinto({ [URL_VIVO]: [OK], [GIRI]: [elenco(giroCampanello({ display_title: 'Campanello', conclusion: 'failure' }))] })
+
+        const { esito, log } = await unGiro(f, MATTINA, TOKEN, SEGRETI)
+
+        expect(esito.actions).toEqual({ esito: 'nessun-giro' })
+        expect(log.mock.calls.map((c) => String(c[0])).join(' ')).toContain('monitor-actions: esito=nessun-giro')
+        expect(f.a(RESEND)).toHaveLength(0)
+    })
+
+    it('senza token non legge i giri e lo dice', async () => {
+        const f = fetchFinto({})
+
+        expect(await guardaUltimoGiro({ token: '', fetchImpl: f.impl })).toMatchObject({ esito: 'illeggibile', http: 0 })
+        expect(f.chiamate).toHaveLength(0)
     })
 })
